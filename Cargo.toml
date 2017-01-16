@@ -1,0 +1,13 @@
+[package]
+name = "text-edit"
+version = "0.1.0"
+authors = ["David LeGare <excaliburhissheath@gmail.com>"]
+
+[dependencies]
+app_units = "0.3"
+euclid = "0.10"
+gleam = "0.2"
+glutin = "0.7"
+webrender = { path = "./webrender/webrender" }
+webrender_traits = { path = "./webrender/webrender_traits", default_features = false }
+xi-core = { path = "./xi-editor/rust" }

@@ -1,0 +1,6 @@
+[submodule "webrender"]
+	path = webrender
+	url = git@github.com:excaliburHisSheath/webrender.git
+[submodule "xi-editor"]
+	path = xi-editor
+	url = https://github.com/excaliburHisSheath/xi-editor.git
