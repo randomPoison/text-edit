@@ -9,8 +9,9 @@ use app_units::Au;
 use gleam::gl;
 use std::path::PathBuf;
 use webrender_traits::{ColorF, Epoch, GlyphInstance};
-use webrender_traits::{ImageData, ImageFormat, PipelineId};
+// use webrender_traits::{ImageData, ImageFormat};
 use webrender_traits::{LayoutSize, LayoutPoint, LayoutRect, LayoutTransform, DeviceUintSize};
+use webrender_traits::{DisplayListBuilder, RenderApi, PipelineId};
 use std::fs::File;
 use std::io::Read;
 use std::env;
@@ -42,12 +43,13 @@ fn main() {
     // Configure and build the webrender instance.
     // =============================================================================================
     let (width, height) = window.get_inner_size().unwrap();
+    println!("width: {}, height: {}", width, height);
 
     let opts = webrender::RendererOptions {
         resource_override_path: res_path,
-        // debug: true,
+        debug: true,
         precache_shaders: true,
-        // enable_scrollbars: true,
+        enable_scrollbars: true,
         .. Default::default()
     };
 
@@ -59,63 +61,122 @@ fn main() {
     let notifier = Box::new(Notifier::new(window.create_window_proxy()));
     renderer.set_render_notifier(notifier);
 
-    // Setup some test data to demo webrender's functionality.
-    // =============================================================================================
     let epoch = Epoch(0);
-    let root_background_color = ColorF::new(1.0, 0.0, 0.0, 1.0);
+    let root_background_color = ColorF::new(0.1, 0.1, 0.1, 1.0);
 
     let pipeline_id = PipelineId(0, 0);
-    let mut builder = webrender_traits::DisplayListBuilder::new(pipeline_id);
+    api.set_root_pipeline(pipeline_id);
 
-    let bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width as f32, height as f32));
+    let builder = build_display_lists(&api, pipeline_id, width as f32, height as f32);
+    api.set_root_display_list(
+        Some(root_background_color),
+        epoch,
+        LayoutSize::new(width as f32, height as f32),
+        builder);
+
+    for event in window.wait_events() {
+        renderer.update();
+
+        renderer.render(DeviceUintSize::new(width, height));
+
+        window.swap_buffers().ok();
+
+        match event {
+            glutin::Event::Closed => break,
+            glutin::Event::KeyboardInput(_element_state, scan_code, _virtual_key_code) => {
+                if scan_code == 9 {
+                    break;
+                }
+            }
+            glutin::Event::Resized(width, height) => {
+                println!("width: {}, height: {}", width, height);
+                // Rebuild the layout for the new window size.
+                // TODO: Can we just update the old builder instead of recreating it?
+                let builder = build_display_lists(&api, pipeline_id, width as f32, height as f32);
+                api.set_root_display_list(
+                    Some(root_background_color),
+                    epoch,
+                    LayoutSize::new(width as f32, height as f32),
+                    builder);
+            }
+            _ => {}//println!("Unhandled event: {:?}", event),
+        }
+    }
+}
+
+fn build_display_lists(
+    api: &RenderApi,
+    pipeline_id: PipelineId,
+    width: f32,
+    height: f32,
+) -> DisplayListBuilder {
+    let mut builder = DisplayListBuilder::new(pipeline_id);
+
+    let bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
     let clip_region = {
         let complex = webrender_traits::ComplexClipRegion::new(
-            LayoutRect::new(LayoutPoint::new(50.0, 50.0), LayoutSize::new(100.0, 100.0)),
-            webrender_traits::BorderRadius::uniform(20.0));
+            LayoutRect::new(LayoutPoint::new(0.0, 0.0),
+            LayoutSize::new(width, height)),
+            webrender_traits::BorderRadius::uniform(0.0),
+        );
 
         builder.new_clip_region(&bounds, vec![complex], None)
     };
 
-    builder.push_stacking_context(webrender_traits::ScrollPolicy::Scrollable,
-                                  bounds,
-                                  clip_region,
-                                  0,
-                                  &LayoutTransform::identity(),
-                                  &LayoutTransform::identity(),
-                                  webrender_traits::MixBlendMode::Normal,
-                                  Vec::new());
+    builder.push_stacking_context(
+        webrender_traits::ScrollPolicy::Scrollable,
+        bounds,
+        clip_region,
+        0,
+        &LayoutTransform::identity(),
+        &LayoutTransform::identity(),
+        webrender_traits::MixBlendMode::Normal,
+        Vec::new(),
+    );
 
-    let sub_clip = {
-        let mask = webrender_traits::ImageMask {
-            image: api.add_image(2, 2, None, ImageFormat::A8, ImageData::new(vec![0,80, 180, 255])),
-            rect: LayoutRect::new(LayoutPoint::new(75.0, 75.0), LayoutSize::new(100.0, 100.0)),
-            repeat: false,
-        };
-        let complex = webrender_traits::ComplexClipRegion::new(
-            LayoutRect::new(LayoutPoint::new(50.0, 50.0), LayoutSize::new(100.0, 100.0)),
-            webrender_traits::BorderRadius::uniform(20.0));
+    // let sub_clip = {
+    //     let mask = webrender_traits::ImageMask {
+    //         image: api.add_image(2, 2, None, ImageFormat::A8, ImageData::new(vec![0,80, 180, 255])),
+    //         rect: LayoutRect::new(LayoutPoint::new(75.0, 75.0), LayoutSize::new(100.0, 100.0)),
+    //         repeat: false,
+    //     };
+    //     let complex = webrender_traits::ComplexClipRegion::new(
+    //         LayoutRect::new(LayoutPoint::new(50.0, 50.0), LayoutSize::new(100.0, 100.0)),
+    //         webrender_traits::BorderRadius::uniform(20.0));
+    //
+    //     builder.new_clip_region(&bounds, vec![complex], Some(mask))
+    // };
 
-        builder.new_clip_region(&bounds, vec![complex], Some(mask))
-    };
+    // Yellow rectangle that takes up most of the scren except for 50px around the edges.
+    builder.push_rect(
+        LayoutRect::new(LayoutPoint::new(50.0, 50.0),
+        LayoutSize::new(width - 100.0, height - 100.0)),
+        clip_region,
+        ColorF::new(1.0, 1.0, 0.0, 1.0),
+    );
 
-    builder.push_rect(LayoutRect::new(LayoutPoint::new(100.0, 100.0), LayoutSize::new(100.0, 100.0)),
-                      sub_clip,
-                      ColorF::new(0.0, 1.0, 0.0, 1.0));
-    builder.push_rect(LayoutRect::new(LayoutPoint::new(250.0, 100.0), LayoutSize::new(100.0, 100.0)),
-                      sub_clip,
-                      ColorF::new(0.0, 1.0, 0.0, 1.0));
+    // Green rectangle sitting towards the middle of the window.
+    builder.push_rect(
+        LayoutRect::new(LayoutPoint::new(250.0, 150.0),
+        LayoutSize::new(100.0, 100.0)),
+        clip_region,
+        ColorF::new(0.0, 1.0, 0.0, 1.0),
+    );
     let border_side = webrender_traits::BorderSide {
-        width: 10.0,
+        width: 3.0,
         color: ColorF::new(0.0, 0.0, 1.0, 1.0),
-        style: webrender_traits::BorderStyle::Groove,
+        style: webrender_traits::BorderStyle::Dashed,
     };
-    builder.push_border(LayoutRect::new(LayoutPoint::new(100.0, 100.0), LayoutSize::new(100.0, 100.0)),
-                        sub_clip,
-                        border_side,
-                        border_side,
-                        border_side,
-                        border_side,
-                        webrender_traits::BorderRadius::uniform(20.0));
+    builder.push_border(
+        LayoutRect::new(LayoutPoint::new(250.0, 150.0),
+        LayoutSize::new(100.0, 100.0)),
+        clip_region,
+        border_side,
+        border_side,
+        border_side,
+        border_side,
+        webrender_traits::BorderRadius::uniform(0.0),
+    );
 
 
     if false { // draw text?
@@ -198,30 +259,7 @@ fn main() {
 
     builder.pop_stacking_context();
 
-    api.set_root_display_list(
-        Some(root_background_color),
-        epoch,
-        LayoutSize::new(width as f32, height as f32),
-        builder);
-    api.set_root_pipeline(pipeline_id);
-
-    for event in window.wait_events() {
-        renderer.update();
-
-        renderer.render(DeviceUintSize::new(width, height));
-
-        window.swap_buffers().ok();
-
-        match event {
-            glutin::Event::Closed => break,
-            glutin::Event::KeyboardInput(_element_state, scan_code, _virtual_key_code) => {
-                if scan_code == 9 {
-                    break;
-                }
-            }
-            _ => ()
-        }
-    }
+    builder
 }
 
 fn load_file(name: &str) -> Vec<u8> {
