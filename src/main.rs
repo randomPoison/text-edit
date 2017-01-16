@@ -62,7 +62,7 @@ fn main() {
     renderer.set_render_notifier(notifier);
 
     let epoch = Epoch(0);
-    let root_background_color = ColorF::new(0.1, 0.1, 0.1, 1.0);
+    let root_background_color = ColorF::new(0.3, 0.1, 0.1, 1.0);
 
     let pipeline_id = PipelineId(0, 0);
     api.set_root_pipeline(pipeline_id);
@@ -178,84 +178,83 @@ fn build_display_lists(
         webrender_traits::BorderRadius::uniform(0.0),
     );
 
+    let font_bytes = load_file("res/FreeSans.ttf");
+    let font_key = api.add_raw_font(font_bytes);
 
-    if false { // draw text?
-        let font_bytes = load_file("res/FreeSans.ttf");
-        let font_key = api.add_raw_font(font_bytes);
+    let text_bounds = LayoutRect::new(LayoutPoint::new(100.0, 200.0), LayoutSize::new(700.0, 300.0));
 
-        let text_bounds = LayoutRect::new(LayoutPoint::new(100.0, 200.0), LayoutSize::new(700.0, 300.0));
+    let glyphs = vec![
+        GlyphInstance {
+            index: 48,
+            x: 100.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 68,
+            x: 150.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 80,
+            x: 200.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 82,
+            x: 250.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 81,
+            x: 300.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 3,
+            x: 350.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 86,
+            x: 400.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 79,
+            x: 450.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 72,
+            x: 500.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 83,
+            x: 550.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 87,
+            x: 600.0,
+            y: 100.0,
+        },
+        GlyphInstance {
+            index: 17,
+            x: 650.0,
+            y: 100.0,
+        },
+    ];
 
-        let glyphs = vec![
-            GlyphInstance {
-                index: 48,
-                x: 100.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 68,
-                x: 150.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 80,
-                x: 200.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 82,
-                x: 250.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 81,
-                x: 300.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 3,
-                x: 350.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 86,
-                x: 400.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 79,
-                x: 450.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 72,
-                x: 500.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 83,
-                x: 550.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 87,
-                x: 600.0,
-                y: 100.0,
-            },
-            GlyphInstance {
-                index: 17,
-                x: 650.0,
-                y: 100.0,
-            },
-        ];
-
-        builder.push_text(text_bounds,
-                          webrender_traits::ClipRegion::simple(&bounds),
-                          glyphs,
-                          font_key,
-                          ColorF::new(1.0, 1.0, 0.0, 1.0),
-                          Au::from_px(32),
-                          Au::from_px(0));
-    }
+    builder.push_text(
+        text_bounds,
+        webrender_traits::ClipRegion::simple(&bounds),
+        glyphs,
+        font_key,
+        ColorF::new(0.0, 0.0, 1.0, 1.0),
+        Au::from_px(32),
+        Au::from_px(0),
+    );
 
     builder.pop_stacking_context();
 
