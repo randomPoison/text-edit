@@ -14,16 +14,15 @@ use std::fs::File;
 use std::io::Read;
 
 static TEST_STRING: &'static str = "Mammon slept.";
+const FONT_SCALE: f32 = 64.0;
 
 fn main() {
     // Load sample font into memory for layout purposes.
-    let mut file = File::open("res/FreeSans.ttf").unwrap();
+    let mut file = File::open("res/Arial Unicode.ttf").unwrap();
     let mut font_bytes = vec![];
     file.read_to_end(&mut font_bytes).unwrap();
 
     let font = FontCollection::from_bytes(&*font_bytes).into_font().expect("Unable to load font from res/FreeSans.ttf");
-    let v_metrics = font.v_metrics(Scale::uniform(32.0));
-    println!("Font v metrics: {:?}", v_metrics);
 
     // Create a new glutin window and make its OpenGL context active.
     let window = glutin::WindowBuilder::new()
@@ -68,14 +67,22 @@ fn main() {
 
     let font_key = api.add_raw_font(font_bytes.clone());
 
-    let builder = build_display_lists(pipeline_id, font_key, &font, width as f32, height as f32);
+    let mut hidpi_factor = window.hidpi_factor();
+
+    let builder = build_display_lists(
+        pipeline_id,
+        font_key,
+        &font,
+        width as f32,
+        height as f32,
+        hidpi_factor,
+    );
     api.set_root_display_list(
         Some(root_background_color),
         epoch,
         LayoutSize::new(width as f32, height as f32),
-        builder);
-
-    let mut hidpi_factor = window.hidpi_factor();
+        builder,
+    );
 
     for event in window.wait_events() {
         let (width, height) = window.get_inner_size().unwrap();
@@ -90,6 +97,7 @@ fn main() {
                 &font,
                 width as f32,
                 height as f32,
+                hidpi_factor,
             );
             api.set_root_display_list(
                 Some(root_background_color),
@@ -130,6 +138,7 @@ fn build_display_lists(
     font: &Font,
     width: f32,
     height: f32,
+    hidpi_factor: f32,
 ) -> DisplayListBuilder {
     let mut builder = DisplayListBuilder::new(pipeline_id);
 
@@ -165,18 +174,18 @@ fn build_display_lists(
 
     // Green rectangle sitting towards the middle of the window.
     builder.push_rect(
-        LayoutRect::new(LayoutPoint::new(250.0, 150.0),
+        LayoutRect::new(LayoutPoint::new(250.0, 250.0),
         LayoutSize::new(100.0, 100.0)),
         clip_region,
         ColorF::new(0.0, 1.0, 0.0, 1.0),
     );
-    let border_side = webrender_traits::BorderSide {
+    let border_side = BorderSide {
         width: 3.0,
         color: ColorF::new(0.0, 0.0, 1.0, 1.0),
         style: webrender_traits::BorderStyle::Dashed,
     };
     builder.push_border(
-        LayoutRect::new(LayoutPoint::new(250.0, 150.0),
+        LayoutRect::new(LayoutPoint::new(250.0, 250.0),
         LayoutSize::new(100.0, 100.0)),
         clip_region,
         border_side,
@@ -188,15 +197,35 @@ fn build_display_lists(
 
     // Sample text to demonstrate text layout and rendering.
     let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
+
+    let v_metrics = font.v_metrics(Scale::uniform(FONT_SCALE));
+    println!("Font v metrics: {:?}", v_metrics);
+
+    let origin = Point { x: 175.0, y: 100.0 };
     let glyphs = font
-        .layout(TEST_STRING, Scale::uniform(32.0), Point { x: 100.0, y: 130.0 })
+        // Official layout functionality, not working because reasons.
+        // .layout(TEST_STRING, Scale::uniform(FONT_SCALE), origin)
+
+        .glyphs_for(TEST_STRING.chars())
+
+        // "Normal" horizontal font layout.
+        .scan(0.0, |x, glyph| {
+            let scaled = glyph.scaled(Scale::uniform(FONT_SCALE));
+            let width = scaled.h_metrics().advance_width;
+            let next = scaled.positioned(point(*x + origin.x, FONT_SCALE + origin.y));
+            println!("width: {}", width);
+            *x += width;
+            Some(next)
+        })
+
         .map(|glyph| {
+            // Draw a debug rect for the glyphs.
             if let Some(glyph_bounds) = glyph.pixel_bounding_box() {
                 builder.push_rect(
                     LayoutRect::new(
                         LayoutPoint::new(
                             glyph_bounds.min.x as f32,
-                            glyph_bounds.min.y as f32 + 20.0,
+                            glyph_bounds.min.y as f32,
                         ),
                         LayoutSize::new(glyph_bounds.width() as f32, glyph_bounds.height() as f32),
                     ),
@@ -218,18 +247,85 @@ fn build_display_lists(
         glyphs,
         font_key,
         ColorF::new(0.0, 0.0, 1.0, 1.0),
-        Au::from_px(32),
+        Au::from_f32_px(FONT_SCALE),
         Au::from_px(0),
     );
 
-    // Demo what the text layout looks like.
-    builder.push_rect(
+    let origin = Point { x: 100.0, y: 100.0 };
+    let glyphs = font
+        // .layout(TEST_STRING, Scale::uniform(FONT_SCALE), origin)
+        .glyphs_for(TEST_STRING.chars())
+
+        // Vertical layout to make everything visible.
+        .scan(0.0, |y, glyph| {
+            let scaled = glyph.scaled(Scale::uniform(FONT_SCALE));
+            let width = scaled.h_metrics().advance_width;
+            let next = scaled.positioned(point(origin.x, FONT_SCALE + origin.y + *y));
+            println!("width: {}", width);
+            *y += 50.0;
+            Some(next)
+        })
+
+        .map(|glyph| {
+            // Draw a debug rect for the glyphs.
+            if let Some(glyph_bounds) = glyph.pixel_bounding_box() {
+                builder.push_rect(
+                    LayoutRect::new(
+                        LayoutPoint::new(
+                            glyph_bounds.min.x as f32,
+                            glyph_bounds.min.y as f32,
+                        ),
+                        LayoutSize::new(glyph_bounds.width() as f32, glyph_bounds.height() as f32),
+                    ),
+                    clip_region,
+                    ColorF::new(0.8, 0.0, 0.1, 1.0),
+                );
+            }
+
+            GlyphInstance {
+                index: glyph.id().0,
+                x: glyph.position().x,
+                y: glyph.position().y,
+            }
+        })
+        .collect();
+
+    // Draw an em-square behind the first character.
+    // builder.push_rect(
+    //     LayoutRect::new(
+    //         LayoutPoint::new(origin.x, origin.y),
+    //         LayoutSize::new(FONT_SCALE, FONT_SCALE),
+    //     ),
+    //     clip_region,
+    //     ColorF::new(0.0, 1.0, 0.0, 1.0),
+    // );
+    let em_border = BorderSide {
+        width: 1.0,
+        color: ColorF::new(1.0, 0.0, 1.0, 1.0),
+        style: webrender_traits::BorderStyle::Dashed,
+    };
+    builder.push_border(
         LayoutRect::new(
-            LayoutPoint::new(100.0, 70.0),
-            LayoutSize::new(32.0, 32.0),
+            LayoutPoint::new(origin.x, origin.y),
+            LayoutSize::new(FONT_SCALE, FONT_SCALE),
         ),
         clip_region,
-        ColorF::new(0.8, 0.0, 0.1, 1.0),
+        em_border,
+        em_border,
+        em_border,
+        em_border,
+        webrender_traits::BorderRadius::uniform(0.0),
+    );
+
+    // Add the text to the stuff.
+    builder.push_text(
+        text_bounds,
+        webrender_traits::ClipRegion::simple(&bounds),
+        glyphs,
+        font_key,
+        ColorF::new(0.0, 0.0, 1.0, 1.0),
+        Au::from_f32_px(FONT_SCALE),
+        Au::from_px(0),
     );
 
     builder.pop_stacking_context();
