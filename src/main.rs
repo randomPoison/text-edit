@@ -46,6 +46,7 @@ fn main() {
     println!("width: {}, height: {}", width, height);
 
     let opts = webrender::RendererOptions {
+        device_pixel_ratio: window.hidpi_factor(),
         resource_override_path: res_path,
         debug: true,
         precache_shaders: true,
@@ -77,7 +78,7 @@ fn main() {
     for event in window.wait_events() {
         renderer.update();
 
-        renderer.render(DeviceUintSize::new(width, height));
+        renderer.render(DeviceUintSize::new(width * window.hidpi_factor() as u32, height * window.hidpi_factor() as u32));
 
         window.swap_buffers().ok();
 
