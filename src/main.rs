@@ -1,29 +1,27 @@
 extern crate app_units;
-extern crate webrender;
+extern crate euclid;
 extern crate glutin;
 extern crate gleam;
+extern crate rusttype;
+extern crate webrender;
 extern crate webrender_traits;
-extern crate euclid;
 
 use app_units::Au;
 use gleam::gl;
-use std::path::PathBuf;
-use webrender_traits::{ColorF, Epoch, GlyphInstance};
-// use webrender_traits::{ImageData, ImageFormat};
-use webrender_traits::{LayoutSize, LayoutPoint, LayoutRect, LayoutTransform, DeviceUintSize};
-use webrender_traits::{DisplayListBuilder, RenderApi, PipelineId};
+use webrender_traits::*;
+use rusttype::*;
 use std::fs::File;
 use std::io::Read;
-use std::env;
+
+static TEST_STRING: &'static str = "Mammon slept.";
 
 fn main() {
-    // Check to see if a shader resource path was passed in as a command line argument.
-    let args: Vec<String> = env::args().collect();
-    let res_path = if args.len() > 1 {
-        Some(PathBuf::from(&args[1]))
-    } else {
-        None
-    };
+    // Load sample font into memory for layout purposes.
+    let mut file = File::open("res/FreeSans.ttf").unwrap();
+    let mut font_bytes = vec![];
+    file.read_to_end(&mut font_bytes).unwrap();
+
+    let font = FontCollection::from_bytes(&*font_bytes).into_font().expect("Unable to load font from res/FreeSans.ttf");
 
     // Create a new glutin window and make its OpenGL context active.
     let window = glutin::WindowBuilder::new()
@@ -38,7 +36,6 @@ fn main() {
     }
 
     println!("OpenGL version {}", gl::get_string(gl::VERSION));
-    println!("Shader resource path: {:?}", res_path);
 
     // Configure and build the webrender instance.
     // =============================================================================================
@@ -46,7 +43,6 @@ fn main() {
     println!("width: {}, height: {}", width, height);
 
     let opts = webrender::RendererOptions {
-        resource_override_path: res_path,
         debug: true,
         precache_shaders: true,
         enable_scrollbars: true,
@@ -67,7 +63,9 @@ fn main() {
     let pipeline_id = PipelineId(0, 0);
     api.set_root_pipeline(pipeline_id);
 
-    let builder = build_display_lists(&api, pipeline_id, width as f32, height as f32);
+    let font_key = api.add_raw_font(font_bytes.clone());
+
+    let builder = build_display_lists(pipeline_id, font_key, &font, width as f32, height as f32);
     api.set_root_display_list(
         Some(root_background_color),
         epoch,
@@ -92,7 +90,7 @@ fn main() {
                 println!("width: {}, height: {}", width, height);
                 // Rebuild the layout for the new window size.
                 // TODO: Can we just update the old builder instead of recreating it?
-                let builder = build_display_lists(&api, pipeline_id, width as f32, height as f32);
+                let builder = build_display_lists(pipeline_id, font_key, &font, width as f32, height as f32);
                 api.set_root_display_list(
                     Some(root_background_color),
                     epoch,
@@ -105,8 +103,9 @@ fn main() {
 }
 
 fn build_display_lists(
-    api: &RenderApi,
     pipeline_id: PipelineId,
+    font_key: FontKey,
+    font: &Font,
     width: f32,
     height: f32,
 ) -> DisplayListBuilder {
@@ -133,19 +132,6 @@ fn build_display_lists(
         webrender_traits::MixBlendMode::Normal,
         Vec::new(),
     );
-
-    // let sub_clip = {
-    //     let mask = webrender_traits::ImageMask {
-    //         image: api.add_image(2, 2, None, ImageFormat::A8, ImageData::new(vec![0,80, 180, 255])),
-    //         rect: LayoutRect::new(LayoutPoint::new(75.0, 75.0), LayoutSize::new(100.0, 100.0)),
-    //         repeat: false,
-    //     };
-    //     let complex = webrender_traits::ComplexClipRegion::new(
-    //         LayoutRect::new(LayoutPoint::new(50.0, 50.0), LayoutSize::new(100.0, 100.0)),
-    //         webrender_traits::BorderRadius::uniform(20.0));
-    //
-    //     builder.new_clip_region(&bounds, vec![complex], Some(mask))
-    // };
 
     // Yellow rectangle that takes up most of the scren except for 50px around the edges.
     builder.push_rect(
@@ -178,73 +164,33 @@ fn build_display_lists(
         webrender_traits::BorderRadius::uniform(0.0),
     );
 
-    let font_bytes = load_file("res/FreeSans.ttf");
-    let font_key = api.add_raw_font(font_bytes);
+    let device_pixel_ratio: f32 = 1.0;
+    let font_size = 16.0;
+    let em_size = font_size / 16.0;
+    let design_units_per_em = 1000;
+    let design_units_per_pixel = design_units_per_em as f32 / 16.0;
+    let scaled_design_units_to_pixels = (em_size * device_pixel_ratio) / design_units_per_pixel;
 
-    let text_bounds = LayoutRect::new(LayoutPoint::new(100.0, 200.0), LayoutSize::new(700.0, 300.0));
-
-    let glyphs = vec![
-        GlyphInstance {
-            index: 48,
-            x: 100.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 68,
-            x: 150.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 80,
-            x: 200.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 82,
-            x: 250.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 81,
-            x: 300.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 3,
-            x: 350.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 86,
-            x: 400.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 79,
-            x: 450.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 72,
-            x: 500.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 83,
-            x: 550.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 87,
-            x: 600.0,
-            y: 100.0,
-        },
-        GlyphInstance {
-            index: 17,
-            x: 650.0,
-            y: 100.0,
-        },
-    ];
+    // Sample text to demonstrate text layout and rendering.
+    let text_bounds = LayoutRect::new(LayoutPoint::new(100.0, 200.0), LayoutSize::new(700.0, 700.0));
+    let glyphs = font
+        // .layout(TEST_STRING, Scale::uniform(32.0), Point { x: 0.0, y: 32.0 })
+        .glyphs_for(TEST_STRING.chars())
+        .scan(0.0, |x, glyph| {
+            let scaled = glyph.scaled(Scale::uniform(32.0));
+            let width = scaled.h_metrics().advance_width;
+            let next = scaled.positioned(Point { x: *x, y: 32.0 });
+            *x += width;
+            Some(next)
+        })
+        .map(|glyph| {
+            GlyphInstance {
+                index: glyph.id().0,
+                x: glyph.position().x * scaled_design_units_to_pixels,
+                y: glyph.position().y,
+            }
+        })
+        .collect();
 
     builder.push_text(
         text_bounds,
@@ -259,13 +205,6 @@ fn build_display_lists(
     builder.pop_stacking_context();
 
     builder
-}
-
-fn load_file(name: &str) -> Vec<u8> {
-    let mut file = File::open(name).unwrap();
-    let mut buffer = vec![];
-    file.read_to_end(&mut buffer).unwrap();
-    buffer
 }
 
 /// Helper struct for updating the window when a frame is done processing.
