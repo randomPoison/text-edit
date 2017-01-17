@@ -22,6 +22,8 @@ fn main() {
     file.read_to_end(&mut font_bytes).unwrap();
 
     let font = FontCollection::from_bytes(&*font_bytes).into_font().expect("Unable to load font from res/FreeSans.ttf");
+    let v_metrics = font.v_metrics(Scale::uniform(32.0));
+    println!("Font v metrics: {:?}", v_metrics);
 
     // Create a new glutin window and make its OpenGL context active.
     let window = glutin::WindowBuilder::new()
@@ -44,7 +46,7 @@ fn main() {
 
     let opts = webrender::RendererOptions {
         device_pixel_ratio: window.hidpi_factor(),
-        debug: true,
+        // debug: true,
         precache_shaders: true,
         enable_scrollbars: true,
         .. Default::default()
@@ -73,10 +75,40 @@ fn main() {
         LayoutSize::new(width as f32, height as f32),
         builder);
 
+    let mut hidpi_factor = window.hidpi_factor();
+
     for event in window.wait_events() {
+        let (width, height) = window.get_inner_size().unwrap();
+
+        if window.hidpi_factor() != hidpi_factor {
+            hidpi_factor = window.hidpi_factor();
+            api.set_device_pixel_ratio(hidpi_factor);
+
+            let builder = build_display_lists(
+                pipeline_id,
+                font_key,
+                &font,
+                width as f32,
+                height as f32,
+            );
+            api.set_root_display_list(
+                Some(root_background_color),
+                epoch,
+                LayoutSize::new(width as f32, height as f32),
+                builder,
+            );
+
+            // api.generate_frame();
+        }
+
         renderer.update();
 
-        renderer.render(DeviceUintSize::new(width * window.hidpi_factor() as u32, height * window.hidpi_factor() as u32));
+        let size = DeviceUintSize::new(
+            width * hidpi_factor as u32,
+            height * hidpi_factor as u32,
+        );
+        println!("device size: {:?}", size);
+        renderer.render(size);
 
         window.swap_buffers().ok();
 
@@ -86,17 +118,6 @@ fn main() {
                 if scan_code == 9 {
                     break;
                 }
-            }
-            glutin::Event::Resized(width, height) => {
-                println!("width: {}, height: {}", width, height);
-                // Rebuild the layout for the new window size.
-                // TODO: Can we just update the old builder instead of recreating it?
-                let builder = build_display_lists(pipeline_id, font_key, &font, width as f32, height as f32);
-                api.set_root_display_list(
-                    Some(root_background_color),
-                    epoch,
-                    LayoutSize::new(width as f32, height as f32),
-                    builder);
             }
             _ => {}//println!("Unhandled event: {:?}", event),
         }
@@ -165,34 +186,32 @@ fn build_display_lists(
         webrender_traits::BorderRadius::uniform(0.0),
     );
 
-    let device_pixel_ratio: f32 = 1.0;
-    let font_size = 16.0;
-    let em_size = font_size / 16.0;
-    let design_units_per_em = 1000;
-    let design_units_per_pixel = design_units_per_em as f32 / 16.0;
-    let scaled_design_units_to_pixels = (em_size * device_pixel_ratio) / design_units_per_pixel;
-
     // Sample text to demonstrate text layout and rendering.
-    let text_bounds = LayoutRect::new(LayoutPoint::new(100.0, 200.0), LayoutSize::new(700.0, 700.0));
+    let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
     let glyphs = font
-        // .layout(TEST_STRING, Scale::uniform(32.0), Point { x: 0.0, y: 32.0 })
-        .glyphs_for(TEST_STRING.chars())
-        .scan(0.0, |x, glyph| {
-            let scaled = glyph.scaled(Scale::uniform(32.0));
-            let width = scaled.h_metrics().advance_width;
-            let next = scaled.positioned(Point { x: *x, y: 32.0 });
-            *x += width;
-            Some(next)
-        })
+        .layout(TEST_STRING, Scale::uniform(32.0), Point { x: 100.0, y: 130.0 })
         .map(|glyph| {
+            if let Some(glyph_bounds) = glyph.pixel_bounding_box() {
+                builder.push_rect(
+                    LayoutRect::new(
+                        LayoutPoint::new(
+                            glyph_bounds.min.x as f32,
+                            glyph_bounds.min.y as f32 + 20.0,
+                        ),
+                        LayoutSize::new(glyph_bounds.width() as f32, glyph_bounds.height() as f32),
+                    ),
+                    clip_region,
+                    ColorF::new(0.8, 0.0, 0.1, 1.0),
+                );
+            }
+
             GlyphInstance {
                 index: glyph.id().0,
-                x: glyph.position().x * scaled_design_units_to_pixels,
+                x: glyph.position().x,
                 y: glyph.position().y,
             }
         })
         .collect();
-
     builder.push_text(
         text_bounds,
         webrender_traits::ClipRegion::simple(&bounds),
@@ -201,6 +220,16 @@ fn build_display_lists(
         ColorF::new(0.0, 0.0, 1.0, 1.0),
         Au::from_px(32),
         Au::from_px(0),
+    );
+
+    // Demo what the text layout looks like.
+    builder.push_rect(
+        LayoutRect::new(
+            LayoutPoint::new(100.0, 70.0),
+            LayoutSize::new(32.0, 32.0),
+        ),
+        clip_region,
+        ColorF::new(0.8, 0.0, 0.1, 1.0),
     );
 
     builder.pop_stacking_context();
