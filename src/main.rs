@@ -67,7 +67,7 @@ fn main() {
 
     let font_key = api.add_raw_font(font_bytes.clone());
 
-    let mut hidpi_factor = window.hidpi_factor();
+    let hidpi_factor = window.hidpi_factor();
 
     let builder = build_display_lists(
         pipeline_id,
@@ -75,7 +75,6 @@ fn main() {
         &font,
         width as f32,
         height as f32,
-        hidpi_factor,
     );
     api.set_root_display_list(
         Some(root_background_color),
@@ -85,41 +84,6 @@ fn main() {
     );
 
     for event in window.wait_events() {
-        let (width, height) = window.get_inner_size().unwrap();
-
-        if window.hidpi_factor() != hidpi_factor {
-            hidpi_factor = window.hidpi_factor();
-            api.set_device_pixel_ratio(hidpi_factor);
-
-            let builder = build_display_lists(
-                pipeline_id,
-                font_key,
-                &font,
-                width as f32,
-                height as f32,
-                hidpi_factor,
-            );
-            api.set_root_display_list(
-                Some(root_background_color),
-                epoch,
-                LayoutSize::new(width as f32, height as f32),
-                builder,
-            );
-
-            // api.generate_frame();
-        }
-
-        renderer.update();
-
-        let size = DeviceUintSize::new(
-            width * hidpi_factor as u32,
-            height * hidpi_factor as u32,
-        );
-        println!("device size: {:?}", size);
-        renderer.render(size);
-
-        window.swap_buffers().ok();
-
         match event {
             glutin::Event::Closed => break,
             glutin::Event::KeyboardInput(_element_state, scan_code, _virtual_key_code) => {
@@ -129,6 +93,13 @@ fn main() {
             }
             _ => {}//println!("Unhandled event: {:?}", event),
         }
+
+        let (width, height) = window.get_inner_size().unwrap();
+
+        renderer.update();
+        renderer.render(DeviceUintSize::new(width, height) * hidpi_factor as u32);
+
+        window.swap_buffers().ok();
     }
 }
 
@@ -138,7 +109,6 @@ fn build_display_lists(
     font: &Font,
     width: f32,
     height: f32,
-    hidpi_factor: f32,
 ) -> DisplayListBuilder {
     let mut builder = DisplayListBuilder::new(pipeline_id);
 
@@ -202,44 +172,57 @@ fn build_display_lists(
     println!("Font v metrics: {:?}", v_metrics);
 
     let origin = Point { x: 175.0, y: 100.0 };
-    let glyphs = font
-        // Official layout functionality, not working because reasons.
-        // .layout(TEST_STRING, Scale::uniform(FONT_SCALE), origin)
-
-        .glyphs_for(TEST_STRING.chars())
+    let glyphs = TEST_STRING.chars()
+        // .take(1)
+        .inspect(|character| print!("{}: ", character))
+        .map(|character| font.glyph(character).unwrap())
 
         // "Normal" horizontal font layout.
-        .scan(0.0, |x, glyph| {
+        .scan((None, 0.0), |&mut (ref mut last, ref mut x), glyph| {
             let scaled = glyph.scaled(Scale::uniform(FONT_SCALE));
-            let width = scaled.h_metrics().advance_width;
-            let next = scaled.positioned(point(*x + origin.x, FONT_SCALE + origin.y));
-            println!("width: {}", width);
+            let h_metrics = scaled.h_metrics();
+            let kerning = last
+                .map(|last| font.pair_kerning(Scale::uniform(FONT_SCALE), last, scaled.id()))
+                .unwrap_or(0.0);
+            let width = h_metrics.advance_width + h_metrics.left_side_bearing + kerning;
+
+            let instance = GlyphInstance {
+                index: scaled.id().0,
+                x: *x + origin.x,
+                y: origin.y,
+            };
+
+            println!("h metrics: {:?}, kerning: {}, width: {}, start: {}", h_metrics, kerning, width, instance.x);
+            builder.push_rect(
+                LayoutRect::new(
+                    LayoutPoint::new(instance.x, instance.y - v_metrics.ascent),
+                    LayoutSize::new(width, v_metrics.ascent - v_metrics.descent),
+                ),
+                clip_region,
+                ColorF::new(0.8, 0.0, 0.1, 1.0),
+            );
+
+            *last = Some(scaled.id());
             *x += width;
-            Some(next)
+            Some(instance)
         })
 
-        .map(|glyph| {
-            // Draw a debug rect for the glyphs.
-            if let Some(glyph_bounds) = glyph.pixel_bounding_box() {
-                builder.push_rect(
-                    LayoutRect::new(
-                        LayoutPoint::new(
-                            glyph_bounds.min.x as f32,
-                            glyph_bounds.min.y as f32,
-                        ),
-                        LayoutSize::new(glyph_bounds.width() as f32, glyph_bounds.height() as f32),
-                    ),
-                    clip_region,
-                    ColorF::new(0.8, 0.0, 0.1, 1.0),
-                );
-            }
-
-            GlyphInstance {
-                index: glyph.id().0,
-                x: glyph.position().x,
-                y: glyph.position().y,
-            }
-        })
+        // .map(|glyph| {
+        //     // Draw a debug rect for the glyphs.
+        //     if let Some(glyph_bounds) = glyph.pixel_bounding_box() {
+        //         builder.push_rect(
+        //             LayoutRect::new(
+        //                 LayoutPoint::new(
+        //                     glyph_bounds.min.x as f32,
+        //                     glyph_bounds.min.y as f32,
+        //                 ),
+        //                 LayoutSize::new(glyph_bounds.width() as f32, glyph_bounds.height() as f32),
+        //             ),
+        //             clip_region,
+        //             ColorF::new(0.8, 0.0, 0.1, 1.0),
+        //         );
+        //     }
+        // })
         .collect();
     builder.push_text(
         text_bounds,
@@ -251,21 +234,16 @@ fn build_display_lists(
         Au::from_px(0),
     );
 
+    // Vertical layout to make everything visible.
     let origin = Point { x: 100.0, y: 100.0 };
     let glyphs = font
-        // .layout(TEST_STRING, Scale::uniform(FONT_SCALE), origin)
         .glyphs_for(TEST_STRING.chars())
-
-        // Vertical layout to make everything visible.
         .scan(0.0, |y, glyph| {
             let scaled = glyph.scaled(Scale::uniform(FONT_SCALE));
-            let width = scaled.h_metrics().advance_width;
             let next = scaled.positioned(point(origin.x, FONT_SCALE + origin.y + *y));
-            println!("width: {}", width);
             *y += 50.0;
             Some(next)
         })
-
         .map(|glyph| {
             // Draw a debug rect for the glyphs.
             if let Some(glyph_bounds) = glyph.pixel_bounding_box() {
@@ -290,19 +268,11 @@ fn build_display_lists(
         })
         .collect();
 
-    // Draw an em-square behind the first character.
-    // builder.push_rect(
-    //     LayoutRect::new(
-    //         LayoutPoint::new(origin.x, origin.y),
-    //         LayoutSize::new(FONT_SCALE, FONT_SCALE),
-    //     ),
-    //     clip_region,
-    //     ColorF::new(0.0, 1.0, 0.0, 1.0),
-    // );
+    // Draw an em-square border behind the first character.
     let em_border = BorderSide {
         width: 1.0,
         color: ColorF::new(1.0, 0.0, 1.0, 1.0),
-        style: webrender_traits::BorderStyle::Dashed,
+        style: BorderStyle::Solid,
     };
     builder.push_border(
         LayoutRect::new(
