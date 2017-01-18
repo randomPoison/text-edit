@@ -13,13 +13,18 @@ use rusttype::*;
 use std::fs::File;
 use std::io::Read;
 
-static TEST_STRING: &'static str = "Mammon slept. And the beast reborn spread over the earth and its numbers grew legion.";
-const FONT_SCALE: f32 = 128.0;
+static TEST_STRING: &'static [&'static str] = &[
+    "Mammon slept. And the beast reborn spread over the earth and its numbers grew legion.",
+    "Here is a second line, let's make sure that we're still doing monospace correctly.",
+    "And yet another line is added, how exciting this is. I think I'll add some unicode characters.",
+    "色は匂..へど散り---ぬるを548+/=$*(*)我が世誰ぞ常ならむ&有為の奥山*今日()越35えて$浅き/夢見じ酔ひもせず."
+];
+const FONT_SCALE: f32 = 32.0;
 const PIXEL_TO_POINT: f32 = 0.71;
 
 fn main() {
     // Load sample font into memory for layout purposes.
-    let mut file = File::open("res/FreeSans.ttf").unwrap();
+    let mut file = File::open("res/Hack-Regular.ttf").unwrap();
     let mut font_bytes = vec![];
     file.read_to_end(&mut font_bytes).unwrap();
 
@@ -61,7 +66,7 @@ fn main() {
     renderer.set_render_notifier(notifier);
 
     let epoch = Epoch(0);
-    let root_background_color = ColorF::new(0.3, 0.1, 0.1, 1.0);
+    let root_background_color = ColorF::new(0.1, 0.1, 0.1, 1.0);
 
     let pipeline_id = PipelineId(0, 0);
     api.set_root_pipeline(pipeline_id);
@@ -135,26 +140,7 @@ fn build_display_lists(
         Vec::new(),
     );
 
-    // Yellow rectangle that takes up most of the scren except for 50px around the edges.
-    builder.push_rect(
-        LayoutRect::new(LayoutPoint::new(0.0, 0.0),
-        LayoutSize::new(width, height)),
-        clip_region,
-        ColorF::new(1.0, 1.0, 0.0, 1.0),
-    );
-
-    // Green rectangle sitting towards the middle of the window.
-    builder.push_rect(
-        LayoutRect::new(LayoutPoint::new(250.0, 250.0),
-        LayoutSize::new(100.0, 100.0)),
-        clip_region,
-        ColorF::new(0.0, 1.0, 0.0, 1.0),
-    );
-    let dashed_border = BorderSide {
-        width: 3.0,
-        color: ColorF::new(0.0, 0.0, 1.0, 1.0),
-        style: webrender_traits::BorderStyle::Dashed,
-    };
+    // Sample text to demonstrate text layout and rendering.
     let em_border = BorderSide {
         width: 1.0,
         color: ColorF::new(1.0, 0.0, 1.0, 1.0),
@@ -165,81 +151,74 @@ fn build_display_lists(
         color: ColorF::new(1.0, 0.0, 0.0, 1.0),
         style: BorderStyle::Solid,
     };
-    builder.push_border(
-        LayoutRect::new(LayoutPoint::new(250.0, 250.0),
-        LayoutSize::new(100.0, 100.0)),
-        clip_region,
-        dashed_border,
-        dashed_border,
-        dashed_border,
-        dashed_border,
-        webrender_traits::BorderRadius::uniform(0.0),
-    );
-
-    // Sample text to demonstrate text layout and rendering.
     let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
 
     let v_metrics = font.v_metrics(Scale::uniform(FONT_SCALE));
+    let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
     println!("Font v metrics: {:?}", v_metrics);
 
-    let origin = Point { x: 10.0, y: 200.0 };
-    let glyphs = font
-        .layout(TEST_STRING, Scale::uniform(FONT_SCALE), origin)
-        .inspect(|glyph| {
-            let pos = glyph.position();
-            let scaled = glyph.unpositioned();
-            let h_metrics = scaled.h_metrics();
+    let mut origin = Point { x: 10.0, y: 0.0 };
+    for line in TEST_STRING {
+        origin = origin + vector(0.0, advance_height);
 
-            // Draw border based on rusttype scaled glyph.
-            let rect = LayoutRect::new(
-                LayoutPoint::new(pos.x, pos.y - v_metrics.ascent),
-                LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent - v_metrics.descent)
-            );
-            builder.push_border(
-                rect,
-                clip_region,
-                em_border,
-                em_border,
-                em_border,
-                em_border,
-                webrender_traits::BorderRadius::uniform(0.0),
-            );
+        let glyphs = font
+            .layout(line, Scale::uniform(FONT_SCALE), origin)
+            // .inspect(|glyph| {
+            //     let pos = glyph.position();
+            //     let scaled = glyph.unpositioned();
+            //     let h_metrics = scaled.h_metrics();
+            //
+            //     // Draw border based on rusttype scaled glyph.
+            //     let rect = LayoutRect::new(
+            //         LayoutPoint::new(pos.x, pos.y - v_metrics.ascent),
+            //         LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent - v_metrics.descent)
+            //     );
+            //     builder.push_border(
+            //         rect,
+            //         clip_region,
+            //         em_border,
+            //         em_border,
+            //         em_border,
+            //         em_border,
+            //         webrender_traits::BorderRadius::uniform(0.0),
+            //     );
+            //
+            //     // Draw border based on webrender glyph dimensions.
+            //     if let Some(bounding_box) = glyph.pixel_bounding_box() {
+            //         let rect = LayoutRect::new(
+            //             LayoutPoint::new(bounding_box.min.x as f32, bounding_box.min.y as f32),
+            //             LayoutSize::new(bounding_box.width() as f32, bounding_box.height() as f32),
+            //         );
+            //         builder.push_border(
+            //             rect,
+            //             clip_region,
+            //             glyph_border,
+            //             glyph_border,
+            //             glyph_border,
+            //             glyph_border,
+            //             webrender_traits::BorderRadius::uniform(0.0),
+            //         );
+            //     }
+            // })
+            .map(|glyph| {
+                GlyphInstance {
+                    index: glyph.id().0,
+                    x: glyph.position().x,
+                    y: glyph.position().y,
+                }
+            })
+            .collect();
 
-            // Draw border based on webrender glyph dimensions.
-            if let Some(bounding_box) = glyph.pixel_bounding_box() {
-                let rect = LayoutRect::new(
-                    LayoutPoint::new(bounding_box.min.x as f32, bounding_box.min.y as f32),
-                    LayoutSize::new(bounding_box.width() as f32, bounding_box.height() as f32),
-                );
-                builder.push_border(
-                    rect,
-                    clip_region,
-                    glyph_border,
-                    glyph_border,
-                    glyph_border,
-                    glyph_border,
-                    webrender_traits::BorderRadius::uniform(0.0),
-                );
-            }
-        })
-        .map(|glyph| {
-            GlyphInstance {
-                index: glyph.id().0,
-                x: glyph.position().x,
-                y: glyph.position().y,
-            }
-        })
-        .collect();
-
-    builder.push_text(
-        text_bounds,
-        webrender_traits::ClipRegion::simple(&bounds),
-        glyphs,
-        font_key,
-        ColorF::new(0.0, 0.0, 1.0, 1.0),
-        Au::from_f32_px(FONT_SCALE * PIXEL_TO_POINT),
-        Au::from_px(0),
-    );
+        builder.push_text(
+            text_bounds,
+            webrender_traits::ClipRegion::simple(&bounds),
+            glyphs,
+            font_key,
+            ColorF::new(0.8, 0.8, 0.8, 1.0),
+            Au::from_f32_px(FONT_SCALE * PIXEL_TO_POINT),
+            Au::from_px(0),
+        );
+    }
 
     builder.pop_stacking_context();
 
