@@ -14,13 +14,16 @@ use std::fs::File;
 use std::io::Read;
 
 static TEST_STRING: &'static [&'static str] = &[
-    "Mammon slept. And the beast reborn spread over the earth and its numbers grew legion.",
-    "Here is a second line, let's make sure that we're still doing monospace correctly.",
-    "And yet another line is added, how exciting this is. I think I'll add some unicode characters.",
-    "色は匂..へど散り---ぬるを548+/=$*(*)我が世誰ぞ常ならむ&有為の奥山*今日()越35えて$浅き/夢見じ酔ひもせず."
+    "\"And the beast shall come forth surrounded by a roiling cloud of vengeance. The house of the unbelievers shall be razed and they shall be scorched to the earth. Their tags shall blink until the end of days.\" --from The Book of Mozilla, 12:10",
+    "\"And the beast shall be made legion. Its numbers shall be increased a thousand thousand fold. The din of a million keyboards like unto a great storm shall cover the earth, and the followers of Mammon shall tremble.\" --from The Book of Mozilla, 3:31 (Red Letter Edition)",
+    "\"And so at last the beast fell and the unbelievers rejoiced. But all was not lost, for from the ash rose a great bird. The bird gazed down upon the unbelievers and cast fire and thunder upon them. For the beast had been reborn with its strength renewed, and the followers of Mammon cowered in horror.\" --from The Book of Mozilla, 7:15",
+    "\"And thus the Creator looked upon the beast reborn and saw that it was good.\" --from The Book of Mozilla, 8:20",
+    "\"Mammon slept. And the beast reborn spread over the earth and its numbers grew legion. And they proclaimed the times and sacrificed crops unto the fire, with the cunning of foxes. And they built a new world in their own image as promised by the sacred words, and spoke of the beast with their children. Mammon awoke, and lo! it was naught but a follower.\" --from The Book of Mozilla, 11:9 (10th Edition)",
+    "\"The twins of Mammon quarrelled. Their warring plunged the world into a new darkness, and the beast abhorred the darkness. So it began to move swiftly, and grew more powerful, and went forth and multiplied. And the beasts brought fire and light to the darkness.\" --from The Book of Mozilla, 15:1"
 ];
 const FONT_SCALE: f32 = 32.0;
 const PIXEL_TO_POINT: f32 = 0.71;
+const DEBUG_GLYPHS: bool = true;
 
 fn main() {
     // Load sample font into memory for layout purposes.
@@ -163,43 +166,46 @@ fn build_display_lists(
 
         let glyphs = font
             .layout(line, Scale::uniform(FONT_SCALE), origin)
-            // .inspect(|glyph| {
-            //     let pos = glyph.position();
-            //     let scaled = glyph.unpositioned();
-            //     let h_metrics = scaled.h_metrics();
-            //
-            //     // Draw border based on rusttype scaled glyph.
-            //     let rect = LayoutRect::new(
-            //         LayoutPoint::new(pos.x, pos.y - v_metrics.ascent),
-            //         LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent - v_metrics.descent)
-            //     );
-            //     builder.push_border(
-            //         rect,
-            //         clip_region,
-            //         em_border,
-            //         em_border,
-            //         em_border,
-            //         em_border,
-            //         webrender_traits::BorderRadius::uniform(0.0),
-            //     );
-            //
-            //     // Draw border based on webrender glyph dimensions.
-            //     if let Some(bounding_box) = glyph.pixel_bounding_box() {
-            //         let rect = LayoutRect::new(
-            //             LayoutPoint::new(bounding_box.min.x as f32, bounding_box.min.y as f32),
-            //             LayoutSize::new(bounding_box.width() as f32, bounding_box.height() as f32),
-            //         );
-            //         builder.push_border(
-            //             rect,
-            //             clip_region,
-            //             glyph_border,
-            //             glyph_border,
-            //             glyph_border,
-            //             glyph_border,
-            //             webrender_traits::BorderRadius::uniform(0.0),
-            //         );
-            //     }
-            // })
+            .inspect(|glyph| {
+                if !DEBUG_GLYPHS { return; }
+
+                let pos = glyph.position();
+                let scaled = glyph.unpositioned();
+                let h_metrics = scaled.h_metrics();
+
+                // Draw border based on rusttype scaled glyph.
+                let rect = LayoutRect::new(
+                    LayoutPoint::new(pos.x, pos.y - v_metrics.ascent),
+                    LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent - v_metrics.descent)
+                );
+                builder.push_border(
+                    rect,
+                    clip_region,
+                    em_border,
+                    em_border,
+                    em_border,
+                    em_border,
+                    webrender_traits::BorderRadius::uniform(0.0),
+                );
+
+                // Draw border based on webrender glyph dimensions.
+                if let Some(bounding_box) = glyph.pixel_bounding_box() {
+                    println!("bounding box: {:?}, pos: {:?}", bounding_box, pos);
+                    let rect = LayoutRect::new(
+                        LayoutPoint::new(bounding_box.min.x as f32, bounding_box.min.y as f32),
+                        LayoutSize::new(bounding_box.width() as f32, bounding_box.height() as f32),
+                    );
+                    builder.push_border(
+                        rect,
+                        clip_region,
+                        glyph_border,
+                        glyph_border,
+                        glyph_border,
+                        glyph_border,
+                        webrender_traits::BorderRadius::uniform(0.0),
+                    );
+                }
+            })
             .map(|glyph| {
                 GlyphInstance {
                     index: glyph.id().0,
