@@ -101,6 +101,22 @@ fn main() {
                     break;
                 }
             }
+            glutin::Event::Resized(width, height) => {
+                let builder = build_display_lists(
+                    pipeline_id,
+                    font_key,
+                    &font,
+                    width as f32,
+                    height as f32,
+                );
+                api.set_root_display_list(
+                    Some(root_background_color),
+                    epoch,
+                    LayoutSize::new(width as f32, height as f32),
+                    builder,
+                );
+                api.generate_frame();
+            }
             _ => {}//println!("Unhandled event: {:?}", event),
         }
 
