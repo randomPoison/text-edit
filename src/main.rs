@@ -91,6 +91,7 @@ fn main() {
         LayoutSize::new(width as f32, height as f32),
         builder,
     );
+    api.generate_frame();
 
     for event in window.wait_events() {
         match event {
@@ -158,7 +159,6 @@ fn build_display_lists(
 
     let v_metrics = font.v_metrics(Scale::uniform(FONT_SCALE));
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
-    println!("Font v metrics: {:?}", v_metrics);
 
     let mut origin = Point { x: 10.0, y: 0.0 };
     for line in TEST_STRING {
@@ -190,7 +190,6 @@ fn build_display_lists(
 
                 // Draw border based on webrender glyph dimensions.
                 if let Some(bounding_box) = glyph.pixel_bounding_box() {
-                    println!("bounding box: {:?}, pos: {:?}", bounding_box, pos);
                     let rect = LayoutRect::new(
                         LayoutPoint::new(bounding_box.min.x as f32, bounding_box.min.y as f32),
                         LayoutSize::new(bounding_box.width() as f32, bounding_box.height() as f32),
