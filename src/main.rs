@@ -21,9 +21,9 @@ static TEST_STRING: &'static [&'static str] = &[
     "\"Mammon slept. And the beast reborn spread over the earth and its numbers grew legion. And they proclaimed the times and sacrificed crops unto the fire, with the cunning of foxes. And they built a new world in their own image as promised by the sacred words, and spoke of the beast with their children. Mammon awoke, and lo! it was naught but a follower.\" --from The Book of Mozilla, 11:9 (10th Edition)",
     "\"The twins of Mammon quarrelled. Their warring plunged the world into a new darkness, and the beast abhorred the darkness. So it began to move swiftly, and grew more powerful, and went forth and multiplied. And the beasts brought fire and light to the darkness.\" --from The Book of Mozilla, 15:1"
 ];
-const FONT_SCALE: f32 = 32.0;
-const PIXEL_TO_POINT: f32 = 0.71;
-const DEBUG_GLYPHS: bool = true;
+const FONT_SCALE: f32 = 14.0;
+const PIXEL_TO_POINT: f32 = 0.75;
+const DEBUG_GLYPHS: bool = false;
 
 fn main() {
     // Load sample font into memory for layout purposes.
@@ -157,7 +157,12 @@ fn build_display_lists(
     };
     let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
 
-    let v_metrics = font.v_metrics(Scale::uniform(FONT_SCALE));
+    // TODO: Investigate why this scaling is necessary. Rusttype says it takes font scale in pixels,
+    // but glyphs rendered with the system renderer don't match the sizes produced by rusttype
+    // unless we slightly tweak the rusttype scale. I used Atom displaying the Hack-Regular font at
+    // 14px to compare, so if this is actually wrong blame Atom.
+    let font_scale = Scale::uniform(FONT_SCALE / PIXEL_TO_POINT);
+    let v_metrics = font.v_metrics(font_scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
 
     let mut origin = Point { x: 10.0, y: 0.0 };
@@ -165,7 +170,7 @@ fn build_display_lists(
         origin = origin + vector(0.0, advance_height);
 
         let glyphs = font
-            .layout(line, Scale::uniform(FONT_SCALE), origin)
+            .layout(line, font_scale, origin)
             .inspect(|glyph| {
                 if !DEBUG_GLYPHS { return; }
 
@@ -220,7 +225,7 @@ fn build_display_lists(
             glyphs,
             font_key,
             ColorF::new(0.8, 0.8, 0.8, 1.0),
-            Au::from_f32_px(FONT_SCALE * PIXEL_TO_POINT),
+            Au::from_f32_px(FONT_SCALE),
             Au::from_px(0),
         );
     }
