@@ -11,7 +11,8 @@ use gleam::gl;
 use webrender_traits::*;
 use rusttype::*;
 use std::fs::File;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::process::{Command, Stdio};
 
 static TEST_STRING: &'static [&'static str] = &[
     "\"And the beast shall come forth surrounded by a roiling cloud of vengeance. The house of the unbelievers shall be razed and they shall be scorched to the earth. Their tags shall blink until the end of days.\" --from The Book of Mozilla, 12:10",
@@ -34,6 +35,7 @@ fn main() {
     let font = FontCollection::from_bytes(&*font_bytes).into_font().unwrap();
 
     // Create a new glutin window and make its OpenGL context active.
+    // ============================================================================================
     let window = glutin::WindowBuilder::new()
                 .with_title("WebRender Sample")
                 .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (3, 2)))
@@ -48,7 +50,7 @@ fn main() {
     println!("OpenGL version {}", gl::get_string(gl::VERSION));
 
     // Configure and build the webrender instance.
-    // =============================================================================================
+    // ============================================================================================
     let (width, height) = window.get_inner_size().unwrap();
     println!("width: {}, height: {}", width, height);
 
@@ -71,6 +73,7 @@ fn main() {
     let epoch = Epoch(0);
     let root_background_color = ColorF::new(0.1, 0.1, 0.1, 1.0);
 
+    // Set the root pipeline, I don't know what this is for, but it's necessary currently.
     let pipeline_id = PipelineId(0, 0);
     api.set_root_pipeline(pipeline_id);
 
@@ -78,6 +81,7 @@ fn main() {
 
     let hidpi_factor = window.hidpi_factor();
 
+    // Generate initial frame.
     let builder = build_display_lists(
         pipeline_id,
         font_key,
@@ -93,6 +97,35 @@ fn main() {
     );
     api.generate_frame();
 
+    // Launch and connect to xi-core.
+    // ============================================================================================
+
+    // TODO: This currently requires that xi-core be in the system PATH
+    let xi_process = Command::new("xi-core")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        // .stderr(Stdio::piped())
+        .spawn()
+        .expect("Somehow failed to run xi-core command, maybe it's not installed?");
+
+    // Get input and output pipes for xi-core.
+    // TODO: Should we be doing anything with stderr?
+    let mut xi_stdin = xi_process.stdin.expect("No stdin pipe to xi-core child process");
+    let xi_stdout = xi_process.stdout.expect("No stdout pipe to xi-core child process");
+    let mut xi_stdout = BufReader::new(xi_stdout);
+
+    // Test sending and receiving messages.
+    writeln!(xi_stdin, "{}", r#"{"id":0,"method":"new_tab","params":[]}"#).expect("Failed to send message to xi-core");
+    writeln!(xi_stdin, "{}", r#"{"id":0,"method":"edit","params":{"method":"open","params":{"filename":"src/main.rs"},"tab":"0"}}"#).expect("Failed to send message to xi-core");
+    let mut response = String::new();
+    xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
+    println!("Response: {}", response.trim());
+    response.clear();
+    xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
+    println!("Response: {}", response.trim());
+
+    // Main event loop.
+    // ============================================================================================
     for event in window.wait_events() {
         match event {
             glutin::Event::Closed => break,
