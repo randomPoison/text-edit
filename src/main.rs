@@ -174,11 +174,9 @@ fn main() {
                 api.generate_frame();
             }
             Event::ReceivedCharacter(character) => {
-                // TODO: When you hit the "delete" character on my OS X machine, glutin sends
-                // '\u{f728}', which is  (INVALID CHARACTER). I suspect this is a bug, as it sends
-                // a valid control character for "backspace".
+                // TODO: OS X will send "private usage codepoints" which we want to filter out.
                 // Issue tracker: https://github.com/excaliburHisSheath/text-edit/issues/2
-                if !character.is_control() && character != '\u{f728}' {
+                if !character.is_control() && !(character >= '\u{e000}' && character <= '\u{f8ff}') {
                     // Send the character to xi-core.
                     let message = format!(r#"{{"method":"edit","params":{{"method":"insert","params":{{"chars":"{}"}},"tab":"0"}}}}"#, character);
                     writeln!(xi_stdin, "{}", message).expect("Failed to send message to xi-core");
