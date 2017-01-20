@@ -10,6 +10,7 @@ extern crate webrender_traits;
 
 use app_units::Au;
 use gleam::gl;
+use glutin::*;
 use webrender_traits::*;
 use rusttype::*;
 use serde_json::Value;
@@ -33,9 +34,9 @@ fn main() {
 
     // Create a new glutin window and make its OpenGL context active.
     // ============================================================================================
-    let window = glutin::WindowBuilder::new()
+    let window = WindowBuilder::new()
                 .with_title("WebRender Sample")
-                .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (3, 2)))
+                .with_gl(GlRequest::Specific(Api::OpenGl, (3, 2)))
                 .build()
                 .unwrap();
 
@@ -138,12 +139,14 @@ fn main() {
     // ============================================================================================
     for event in window.wait_events() {
         match event {
-            glutin::Event::Closed => return,
-            glutin::Event::KeyboardInput(element_state, _scan_code, virtual_key_code) => {
-                if element_state == glutin::ElementState::Pressed {
+            Event::Closed => return,
+            Event::KeyboardInput(element_state, _scan_code, virtual_key_code) => {
+                if element_state == ElementState::Pressed {
                     if let Some(virtual_key_code) = virtual_key_code {
                         let message = match virtual_key_code {
-                            glutin::VirtualKeyCode::Return => Some(r#"{"method":"edit","params":{"method":"insert_newline","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Return => Some(r#"{"method":"edit","params":{"method":"insert_newline","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Back => Some(r#"{"method":"edit","params":{"method":"delete_backward","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Delete => Some(r#"{"method":"edit","params":{"method":"delete_forward","params":{},"tab":"0"}}"#),
                             _ => None,
                         };
 
@@ -153,7 +156,7 @@ fn main() {
                     }
                 }
             }
-            glutin::Event::Resized(width, height) => {
+            Event::Resized(width, height) => {
                 let builder = build_display_lists(
                     pipeline_id,
                     font_key,
@@ -170,8 +173,12 @@ fn main() {
                 );
                 api.generate_frame();
             }
-            glutin::Event::ReceivedCharacter(character) => {
-                if !character.is_control() {
+            Event::ReceivedCharacter(character) => {
+                // TODO: When you hit the "delete" character on my OS X machine, glutin sends
+                // '\u{f728}', which is  (INVALID CHARACTER). I suspect this is a bug, as it sends
+                // a valid control character for "backspace".
+                // Issue tracker: https://github.com/excaliburHisSheath/text-edit/issues/2
+                if !character.is_control() && character != '\u{f728}' {
                     // Send the character to xi-core.
                     let message = format!(r#"{{"method":"edit","params":{{"method":"insert","params":{{"chars":"{}"}},"tab":"0"}}}}"#, character);
                     writeln!(xi_stdin, "{}", message).expect("Failed to send message to xi-core");
@@ -354,17 +361,17 @@ fn build_display_lists(
 /// Helper struct for updating the window when a frame is done processing.
 ///
 /// Notifier exists so we can implement [`RenderNotifier`][RenderNotifier] for
-/// [`glutin::WindowProxy`][glutin::WindowProxy]. This allows us to trigger a window repaint
+/// [`WindowProxy`][WindowProxy]. This allows us to trigger a window repaint
 /// when a frame is done rendering.
 ///
 /// [RenderNotifier]: ./webrender//webrender_traits/trait.RenderNotifier.html
-/// [glutin::WindowProxy]: glutin/struct.WindowProxy.html
+/// [WindowProxy]: glutin/struct.WindowProxy.html
 struct Notifier {
-    window_proxy: glutin::WindowProxy,
+    window_proxy: WindowProxy,
 }
 
 impl Notifier {
-    fn new(window_proxy: glutin::WindowProxy) -> Notifier {
+    fn new(window_proxy: WindowProxy) -> Notifier {
         Notifier {
             window_proxy: window_proxy,
         }
