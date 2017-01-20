@@ -147,6 +147,10 @@ fn main() {
                             VirtualKeyCode::Return => Some(r#"{"method":"edit","params":{"method":"insert_newline","params":{},"tab":"0"}}"#),
                             VirtualKeyCode::Back => Some(r#"{"method":"edit","params":{"method":"delete_backward","params":{},"tab":"0"}}"#),
                             VirtualKeyCode::Delete => Some(r#"{"method":"edit","params":{"method":"delete_forward","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Left => Some(r#"{"method":"edit","params":{"method":"move_left","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Right => Some(r#"{"method":"edit","params":{"method":"move_right","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Up => Some(r#"{"method":"edit","params":{"method":"move_up","params":{},"tab":"0"}}"#),
+                            VirtualKeyCode::Down => Some(r#"{"method":"edit","params":{"method":"move_down","params":{},"tab":"0"}}"#),
                             _ => None,
                         };
 
