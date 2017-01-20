@@ -47,7 +47,6 @@ fn main() {
     // Configure and build the webrender instance.
     // ============================================================================================
     let (width, height) = window.get_inner_size().unwrap();
-    println!("width: {}, height: {}", width, height);
 
     let opts = webrender::RendererOptions {
         device_pixel_ratio: window.hidpi_factor(),
@@ -83,27 +82,35 @@ fn main() {
     let xi_process = Command::new("xi-core")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // .stderr(Stdio::piped())
         .spawn()
         .expect("Somehow failed to run xi-core command, maybe it's not installed?");
 
     // Get input and output pipes for xi-core.
-    // TODO: Should we be doing anything with stderr?
     let mut xi_stdin = xi_process.stdin.expect("No stdin pipe to xi-core child process");
     let xi_stdout = xi_process.stdout.expect("No stdout pipe to xi-core child process");
     let mut xi_stdout = BufReader::new(xi_stdout);
-
-    // Test sending and receiving messages.
-    writeln!(xi_stdin, "{}", r#"{"id":0,"method":"new_tab","params":[]}"#).expect("Failed to send message to xi-core");
-    writeln!(xi_stdin, "{}", r#"{"id":0,"method":"edit","params":{"method":"open","params":{"filename":"src/main.rs"},"tab":"0"}}"#).expect("Failed to send message to xi-core");
     let mut response = String::new();
-    xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
-    println!("Response: {}", response.trim());
-    response.clear();
-    xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
-    println!("Response: {}", response.trim());
 
+    // Open a tab.
+    // TODO: Actually track the name of the new tab and use it in future messages.
+    writeln!(xi_stdin, "{}", r#"{"id":0,"method":"new_tab","params":[]}"#).expect("Failed to send message to xi-core");
+
+    // Change the visible region of the file (no response).
+    writeln!(xi_stdin, "{}", r#"{"method":"edit","params":{"method":"scroll","params":[0, 30],"tab":"0"}}"#).expect("Failed to send message to xi-core");
+
+    // Open this file and get the lines from the file.
+    writeln!(xi_stdin, "{}", r#"{"method":"edit","params":{"method":"open","params":{"filename":"src/main.rs"},"tab":"0"}}"#).expect("Failed to send message to xi-core");
+
+    // Read response from creating the tab.
+    xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
+    response.clear();
+
+    // Read the initial update from opening the file.
+    xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
     let update_value = serde_json::from_str::<Value>(&*response).expect("Failed to parse response json");
+    response.clear();
+
+    // Parse the lines from the initial update.
     let lines = update_value
         .search("lines")
         .expect("No lines in response")
@@ -115,7 +122,6 @@ fn main() {
             line[0].as_str().expect("First element of line wasn't a string").trim_right().to_string()
         })
         .collect::<Vec<_>>();
-    println!("Lines: {:#?}", lines);
 
     // Generate initial frame.
     let builder = build_display_lists(
