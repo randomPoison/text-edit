@@ -1,8 +1,10 @@
 extern crate app_units;
-extern crate euclid;
 extern crate glutin;
 extern crate gleam;
 extern crate rusttype;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde_json;
 extern crate webrender;
 extern crate webrender_traits;
 
@@ -10,18 +12,11 @@ use app_units::Au;
 use gleam::gl;
 use webrender_traits::*;
 use rusttype::*;
+use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 
-static TEST_STRING: &'static [&'static str] = &[
-    "\"And the beast shall come forth surrounded by a roiling cloud of vengeance. The house of the unbelievers shall be razed and they shall be scorched to the earth. Their tags shall blink until the end of days.\" --from The Book of Mozilla, 12:10",
-    "\"And the beast shall be made legion. Its numbers shall be increased a thousand thousand fold. The din of a million keyboards like unto a great storm shall cover the earth, and the followers of Mammon shall tremble.\" --from The Book of Mozilla, 3:31 (Red Letter Edition)",
-    "\"And so at last the beast fell and the unbelievers rejoiced. But all was not lost, for from the ash rose a great bird. The bird gazed down upon the unbelievers and cast fire and thunder upon them. For the beast had been reborn with its strength renewed, and the followers of Mammon cowered in horror.\" --from The Book of Mozilla, 7:15",
-    "\"And thus the Creator looked upon the beast reborn and saw that it was good.\" --from The Book of Mozilla, 8:20",
-    "\"Mammon slept. And the beast reborn spread over the earth and its numbers grew legion. And they proclaimed the times and sacrificed crops unto the fire, with the cunning of foxes. And they built a new world in their own image as promised by the sacred words, and spoke of the beast with their children. Mammon awoke, and lo! it was naught but a follower.\" --from The Book of Mozilla, 11:9 (10th Edition)",
-    "\"The twins of Mammon quarrelled. Their warring plunged the world into a new darkness, and the beast abhorred the darkness. So it began to move swiftly, and grew more powerful, and went forth and multiplied. And the beasts brought fire and light to the darkness.\" --from The Book of Mozilla, 15:1"
-];
 const FONT_SCALE: f32 = 14.0;
 const PIXEL_TO_POINT: f32 = 0.75;
 const DEBUG_GLYPHS: bool = false;
@@ -81,22 +76,6 @@ fn main() {
 
     let hidpi_factor = window.hidpi_factor();
 
-    // Generate initial frame.
-    let builder = build_display_lists(
-        pipeline_id,
-        font_key,
-        &font,
-        width as f32,
-        height as f32,
-    );
-    api.set_root_display_list(
-        Some(root_background_color),
-        epoch,
-        LayoutSize::new(width as f32, height as f32),
-        builder,
-    );
-    api.generate_frame();
-
     // Launch and connect to xi-core.
     // ============================================================================================
 
@@ -124,6 +103,37 @@ fn main() {
     xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
     println!("Response: {}", response.trim());
 
+    let update_value = serde_json::from_str::<Value>(&*response).expect("Failed to parse response json");
+    let lines = update_value
+        .search("lines")
+        .expect("No lines in response")
+        .as_array()
+        .expect("\"lines\" wasn't an array")
+        .iter()
+        .map(|line| {
+            let line = line.as_array().expect("Line wasn't an array");
+            line[0].as_str().expect("First element of line wasn't a string").trim_right().to_string()
+        })
+        .collect::<Vec<_>>();
+    println!("Lines: {:#?}", lines);
+
+    // Generate initial frame.
+    let builder = build_display_lists(
+        pipeline_id,
+        font_key,
+        &font,
+        width as f32,
+        height as f32,
+        &*lines,
+    );
+    api.set_root_display_list(
+        Some(root_background_color),
+        epoch,
+        LayoutSize::new(width as f32, height as f32),
+        builder,
+    );
+    api.generate_frame();
+
     // Main event loop.
     // ============================================================================================
     for event in window.wait_events() {
@@ -141,6 +151,7 @@ fn main() {
                     &font,
                     width as f32,
                     height as f32,
+                    &*lines,
                 );
                 api.set_root_display_list(
                     Some(root_background_color),
@@ -168,6 +179,7 @@ fn build_display_lists(
     font: &Font,
     width: f32,
     height: f32,
+    lines: &[String],
 ) -> DisplayListBuilder {
     let mut builder = DisplayListBuilder::new(pipeline_id);
 
@@ -215,7 +227,7 @@ fn build_display_lists(
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
 
     let mut origin = Point { x: 10.0, y: 0.0 };
-    for line in TEST_STRING {
+    for line in lines {
         origin = origin + vector(0.0, advance_height);
 
         let glyphs = font
