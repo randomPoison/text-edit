@@ -105,11 +105,13 @@ fn main() {
 
     // Spawn a thread to pull the responses form xi-core.
     let (sender, receiver) = mpsc::channel();
+    let window_proxy = window.create_window_proxy();
     thread::spawn(move || {
         for result in xi_stdout.lines() {
             // Read response from creating the tab.
             let response = result.expect("Error receiving response from xi-core");
             sender.send(response).expect("Failed to send message to main thread");
+            window_proxy.wakeup_event_loop();
         }
     });
 
@@ -154,38 +156,36 @@ fn main() {
 
     // Main event loop.
     // ============================================================================================
-    loop {
-        for event in window.poll_events() {
-            match event {
-                glutin::Event::Closed => return,
-                glutin::Event::KeyboardInput(_element_state, scan_code, _virtual_key_code) => {
-                    if scan_code == 9 {
-                        break;
-                    }
+    for event in window.wait_events() {
+        match event {
+            glutin::Event::Closed => return,
+            glutin::Event::KeyboardInput(_element_state, scan_code, _virtual_key_code) => {
+                if scan_code == 9 {
+                    break;
                 }
-                glutin::Event::Resized(width, height) => {
-                    let builder = build_display_lists(
-                        pipeline_id,
-                        font_key,
-                        &font,
-                        width as f32,
-                        height as f32,
-                        &["Flurp".to_string()],
-                    );
-                    api.set_root_display_list(
-                        Some(root_background_color),
-                        epoch,
-                        LayoutSize::new(width as f32, height as f32),
-                        builder,
-                    );
-                    api.generate_frame();
-                }
-                glutin::Event::ReceivedCharacter(character) => {
-                    // Send the character to xi-core.
-                    writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"insert","params":{{"chars":\"{}\"}},"tab":"0"}}}}"#, character).expect("Failed to send message to xi-core");
-                }
-                _ => {},
             }
+            glutin::Event::Resized(width, height) => {
+                let builder = build_display_lists(
+                    pipeline_id,
+                    font_key,
+                    &font,
+                    width as f32,
+                    height as f32,
+                    &["Flurp".to_string()],
+                );
+                api.set_root_display_list(
+                    Some(root_background_color),
+                    epoch,
+                    LayoutSize::new(width as f32, height as f32),
+                    builder,
+                );
+                api.generate_frame();
+            }
+            glutin::Event::ReceivedCharacter(character) => {
+                // Send the character to xi-core.
+                writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"insert","params":{{"chars":\"{}\"}},"tab":"0"}}}}"#, character).expect("Failed to send message to xi-core");
+            }
+            _ => {},
         }
 
         // Receive messages from xi-core.
