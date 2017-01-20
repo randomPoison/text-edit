@@ -90,7 +90,7 @@ fn main() {
     // Get input and output pipes for xi-core.
     let mut xi_stdin = xi_process.stdin.expect("No stdin pipe to xi-core child process");
     let xi_stdout = xi_process.stdout.expect("No stdout pipe to xi-core child process");
-    let mut xi_stdout = BufReader::new(xi_stdout);
+    let xi_stdout = BufReader::new(xi_stdout);
 
 
     // Open a tab.
@@ -115,27 +115,7 @@ fn main() {
         }
     });
 
-    // // Read response from creating the tab.
-    // xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
-    // response.clear();
-    //
-    // // Read the initial update from opening the file.
-    // xi_stdout.read_line(&mut response).expect("Failed to read response from xi-core");
-    // let update_value = serde_json::from_str::<Value>(&*response).expect("Failed to parse response json");
-    // response.clear();
-    //
-    // // Parse the lines from the initial update.
-    // let lines = update_value
-    //     .search("lines")
-    //     .expect("No lines in response")
-    //     .as_array()
-    //     .expect("\"lines\" wasn't an array")
-    //     .iter()
-    //     .map(|line| {
-    //         let line = line.as_array().expect("Line wasn't an array");
-    //         line[0].as_str().expect("First element of line wasn't a string").trim_right().to_string()
-    //     })
-    //     .collect::<Vec<_>>();
+    let mut lines = vec!["foo".into(), "bar".into(), "baz".into()];
 
     // Generate initial frame.
     let builder = build_display_lists(
@@ -144,7 +124,7 @@ fn main() {
         &font,
         width as f32,
         height as f32,
-        &["Flurp".to_string()],
+        &*lines,
     );
     api.set_root_display_list(
         Some(root_background_color),
@@ -159,9 +139,18 @@ fn main() {
     for event in window.wait_events() {
         match event {
             glutin::Event::Closed => return,
-            glutin::Event::KeyboardInput(_element_state, scan_code, _virtual_key_code) => {
-                if scan_code == 9 {
-                    break;
+            glutin::Event::KeyboardInput(element_state, _scan_code, virtual_key_code) => {
+                if element_state == glutin::ElementState::Pressed {
+                    if let Some(virtual_key_code) = virtual_key_code {
+                        let message = match virtual_key_code {
+                            glutin::VirtualKeyCode::Return => Some(r#"{"method":"edit","params":{"method":"insert_newline","params":{},"tab":"0"}}"#),
+                            _ => None,
+                        };
+
+                        if let Some(message) = message {
+                            writeln!(xi_stdin, "{}", message).expect("Failed to send message to xi-core");
+                        }
+                    }
                 }
             }
             glutin::Event::Resized(width, height) => {
@@ -171,7 +160,7 @@ fn main() {
                     &font,
                     width as f32,
                     height as f32,
-                    &["Flurp".to_string()],
+                    &*lines,
                 );
                 api.set_root_display_list(
                     Some(root_background_color),
@@ -182,16 +171,52 @@ fn main() {
                 api.generate_frame();
             }
             glutin::Event::ReceivedCharacter(character) => {
-                // Send the character to xi-core.
-                writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"insert","params":{{"chars":\"{}\"}},"tab":"0"}}}}"#, character).expect("Failed to send message to xi-core");
+                if !character.is_control() {
+                    // Send the character to xi-core.
+                    let message = format!(r#"{{"method":"edit","params":{{"method":"insert","params":{{"chars":"{}"}},"tab":"0"}}}}"#, character);
+                    writeln!(xi_stdin, "{}", message).expect("Failed to send message to xi-core");
+                }
             }
             _ => {},
         }
 
         // Receive messages from xi-core.
         for message in receiver.try_iter() {
-            println!("xi-core message: {:?}", message);
-            // let update_value = serde_json::from_str::<Value>(&*response).expect("Failed to parse response json");
+            // println!("Received: {:?}", message);
+
+            // Parse the response string to structured JSON data.
+            let update_value = serde_json::from_str::<Value>(&*message).expect("Failed to parse response json");
+
+            // Look for "update" messages.
+            // TODO: Look for all the other messages xi-core sends.
+            if let Some(line_data) = update_value.search("lines") {
+                lines = line_data
+                .as_array()
+                .expect("\"lines\" wasn't an array")
+                .iter()
+                .map(|line| {
+                    let line = line.as_array().expect("Line wasn't an array");
+                    line[0].as_str().expect("First element of line wasn't a string").trim_right().to_string()
+                })
+                .collect::<Vec<_>>();
+
+                // TODO: Only generate one frame if multiple update messages were received.
+                let builder = build_display_lists(
+                    pipeline_id,
+                    font_key,
+                    &font,
+                    width as f32,
+                    height as f32,
+                    &*lines,
+                );
+                api.set_root_display_list(
+                    Some(root_background_color),
+                    epoch,
+                    LayoutSize::new(width as f32, height as f32),
+                    builder,
+                );
+                api.generate_frame();
+            }
         }
 
         let (width, height) = window.get_inner_size().unwrap();
