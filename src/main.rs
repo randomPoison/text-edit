@@ -20,8 +20,18 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
-const FONT_SIZE_PX: f32 = 14.0;
+/// The font size in pixels (measuring the vertical height of the font).
+const FONT_SIZE_PX: f32 = 15.0;
+
+/// The height of a line as a multiple of font size.
+const LINE_HEIGHT: f32 = 1.5;
+
+/// Magic constant current being used to handle font scaling.
+///
+/// See https://github.com/excaliburHisSheath/text-edit/issues/4 for more info.
 const PIXEL_TO_POINT: f32 = 0.75;
+
+/// Enables debug rendering of glyph bounding boxes.
 const DEBUG_GLYPHS: bool = false;
 
 fn main() {
@@ -321,9 +331,11 @@ fn build_display_lists(
     // but glyphs rendered with the system renderer don't match the sizes produced by rusttype
     // unless we slightly tweak the rusttype scale. I used Atom displaying the Hack-Regular font at
     // 14px to compare, so if this is actually wrong blame Atom.
+    //
+    // Issue tracker: https://github.com/excaliburHisSheath/text-edit/issues/4
     let font_scale = Scale::uniform(FONT_SIZE_PX / PIXEL_TO_POINT);
     let v_metrics = font.v_metrics(font_scale);
-    let line_height = FONT_SIZE_PX;
+    let line_height = FONT_SIZE_PX * LINE_HEIGHT;
 
     let mut origin = Point { x: 10.0, y: 0.0 };
     for line in lines {
@@ -343,11 +355,14 @@ fn build_display_lists(
                 // pop the cursors as we draw them so we only have to check the next cursor?
                 for cursor_col in &line.cursors {
                     if *cursor_col == index {
+                        let line_middle = pos.y - v_metrics.ascent - v_metrics.descent + (v_metrics.ascent + v_metrics.descent) / 2.0;
+                        let line_top = line_middle - line_height / 2.0;
+
                         // Draw a cursor at this col.
                         builder.push_rect(
                             LayoutRect::new(
-                                LayoutPoint::new(pos.x, pos.y - v_metrics.ascent - v_metrics.descent),
-                                LayoutSize::new(1.0, FONT_SIZE_PX),
+                                LayoutPoint::new(pos.x, line_top),
+                                LayoutSize::new(1.0, line_height),
                             ),
                             clip_region,
                             ColorF::new(1.0, 1.0, 1.0, 1.0),
