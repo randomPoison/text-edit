@@ -346,7 +346,7 @@ fn build_display_lists(
                         // Draw a cursor at this col.
                         builder.push_rect(
                             LayoutRect::new(
-                                LayoutPoint::new(pos.x, pos.y - FONT_SIZE_PX),
+                                LayoutPoint::new(pos.x, pos.y - v_metrics.ascent - v_metrics.descent),
                                 LayoutSize::new(1.0, FONT_SIZE_PX),
                             ),
                             clip_region,
@@ -361,8 +361,8 @@ fn build_display_lists(
 
                 // Draw border based on rusttype scaled glyph.
                 let rect = LayoutRect::new(
-                    LayoutPoint::new(pos.x, pos.y - v_metrics.ascent),
-                    LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent + v_metrics.line_gap)
+                    LayoutPoint::new(pos.x, pos.y - v_metrics.ascent - v_metrics.descent),
+                    LayoutSize::new(h_metrics.advance_width, v_metrics.ascent)
                 );
                 builder.push_border(
                     rect,
