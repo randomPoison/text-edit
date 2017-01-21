@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
-const FONT_SCALE: f32 = 14.0;
+const FONT_SIZE_PX: f32 = 14.0;
 const PIXEL_TO_POINT: f32 = 0.75;
 const DEBUG_GLYPHS: bool = false;
 
@@ -116,7 +116,7 @@ fn main() {
         }
     });
 
-    let mut lines = vec!["foo".into(), "bar".into(), "baz".into()];
+    let mut lines = Vec::new();
 
     // Generate initial frame.
     let builder = build_display_lists(
@@ -189,6 +189,8 @@ fn main() {
             _ => {},
         }
 
+        let (width, height) = window.get_inner_size().unwrap();
+
         // Receive messages from xi-core.
         for message in receiver.try_iter() {
             // println!("Received: {:?}", message);
@@ -199,15 +201,50 @@ fn main() {
             // Look for "update" messages.
             // TODO: Look for all the other messages xi-core sends.
             if let Some(line_data) = update_value.search("lines") {
-                lines = line_data
-                .as_array()
-                .expect("\"lines\" wasn't an array")
-                .iter()
-                .map(|line| {
-                    let line = line.as_array().expect("Line wasn't an array");
-                    line[0].as_str().expect("First element of line wasn't a string").trim_right().to_string()
-                })
-                .collect::<Vec<_>>();
+                lines.clear();
+                for line_contents in line_data.as_array().expect("\"lines\" wasn't an array") {
+                    let line_contents = line_contents.as_array().expect("Line wasn't an array");
+
+                    // TODO: If we're doing visible whitespace we don't want to trim the trailing
+                    // whitespace.
+                    // TODO: We probably want to perform unicode normalization here? Or maybe
+                    // we want to do it when we generate the glyphs?
+                    let line_string = line_contents[0]
+                        .as_str()
+                        .expect("First element of line wasn't a string")
+                        .trim_right()
+                        .to_string();
+                    let mut line_stuffffff = LineContents {
+                        text: line_string,
+                        cursors: Vec::new(),
+                        selections: Vec::new(),
+                    };
+
+                    for line_control in &line_contents[1..] {
+                        let line_control = line_control.as_array().expect("Line control wasn't an array");
+                        let control_type = line_control[0].as_str().expect("First element of line control was not a string");
+                        match control_type {
+                            "cursor" => {
+                                let col = line_control[1].as_u64().expect("Cursor index wasn't an integer");
+
+                                // Xi internally represents cursor position as a `usize` so this cast
+                                // shouldn't overflow.
+                                line_stuffffff.cursors.push(col as usize);
+                            }
+                            "sel" => {
+                                let start = line_control[1].as_u64().expect("Selection start wasn't an integer");
+                                let end = line_control[2].as_u64().expect("Selection end wasn't an integer");
+
+                                // Xi internally represents cursor position as a `usize` so these
+                                // casts shouldn't overflow.
+                                line_stuffffff.selections.push((start as usize, end as usize));
+                            }
+                            "fg" => { unimplemented!() }
+                            _ => panic!("Unknown control type: {:?}", control_type),
+                        }
+                    }
+                    lines.push(line_stuffffff);
+                }
 
                 // TODO: Only generate one frame if multiple update messages were received.
                 let builder = build_display_lists(
@@ -228,8 +265,6 @@ fn main() {
             }
         }
 
-        let (width, height) = window.get_inner_size().unwrap();
-
         renderer.update();
         renderer.render(DeviceUintSize::new(width, height) * hidpi_factor as u32);
 
@@ -243,7 +278,7 @@ fn build_display_lists(
     font: &Font,
     width: f32,
     height: f32,
-    lines: &[String],
+    lines: &[LineContents],
 ) -> DisplayListBuilder {
     let mut builder = DisplayListBuilder::new(pipeline_id);
 
@@ -286,27 +321,48 @@ fn build_display_lists(
     // but glyphs rendered with the system renderer don't match the sizes produced by rusttype
     // unless we slightly tweak the rusttype scale. I used Atom displaying the Hack-Regular font at
     // 14px to compare, so if this is actually wrong blame Atom.
-    let font_scale = Scale::uniform(FONT_SCALE / PIXEL_TO_POINT);
+    let font_scale = Scale::uniform(FONT_SIZE_PX / PIXEL_TO_POINT);
     let v_metrics = font.v_metrics(font_scale);
-    let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
+    let line_height = FONT_SIZE_PX;
 
     let mut origin = Point { x: 10.0, y: 0.0 };
     for line in lines {
-        origin = origin + vector(0.0, advance_height);
+        origin = origin + vector(0.0, line_height);
 
         let glyphs = font
-            .layout(line, font_scale, origin)
-            .inspect(|glyph| {
-                if !DEBUG_GLYPHS { return; }
-
+            .layout(&*line.text, font_scale, origin)
+            .enumerate()
+            .inspect(|&(index, ref glyph)| {
                 let pos = glyph.position();
                 let scaled = glyph.unpositioned();
                 let h_metrics = scaled.h_metrics();
 
+                // Draw cursors where appropriate.
+                // ================================================================================
+                // TODO: Is there a more efficient way to do this? E.g. could we sort the list and
+                // pop the cursors as we draw them so we only have to check the next cursor?
+                for cursor_col in &line.cursors {
+                    if *cursor_col == index {
+                        // Draw a cursor at this col.
+                        builder.push_rect(
+                            LayoutRect::new(
+                                LayoutPoint::new(pos.x, pos.y - FONT_SIZE_PX),
+                                LayoutSize::new(1.0, FONT_SIZE_PX),
+                            ),
+                            clip_region,
+                            ColorF::new(1.0, 1.0, 1.0, 1.0),
+                        );
+                    }
+                }
+
+                // Debug draw bounding boxes for each glyph.
+                // ================================================================================
+                if !DEBUG_GLYPHS { return; }
+
                 // Draw border based on rusttype scaled glyph.
                 let rect = LayoutRect::new(
                     LayoutPoint::new(pos.x, pos.y - v_metrics.ascent),
-                    LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent - v_metrics.descent)
+                    LayoutSize::new(h_metrics.advance_width + h_metrics.left_side_bearing, v_metrics.ascent + v_metrics.line_gap)
                 );
                 builder.push_border(
                     rect,
@@ -335,7 +391,7 @@ fn build_display_lists(
                     );
                 }
             })
-            .map(|glyph| {
+            .map(|(_, glyph)| {
                 GlyphInstance {
                     index: glyph.id().0,
                     x: glyph.position().x,
@@ -350,7 +406,7 @@ fn build_display_lists(
             glyphs,
             font_key,
             ColorF::new(0.8, 0.8, 0.8, 1.0),
-            Au::from_f32_px(FONT_SCALE),
+            Au::from_f32_px(FONT_SIZE_PX),
             Au::from_px(0),
         );
     }
@@ -358,6 +414,13 @@ fn build_display_lists(
     builder.pop_stacking_context();
 
     builder
+}
+
+#[derive(Debug)]
+struct LineContents {
+    text: String,
+    cursors: Vec<usize>,
+    selections: Vec<(usize, usize)>,
 }
 
 /// Helper struct for updating the window when a frame is done processing.
