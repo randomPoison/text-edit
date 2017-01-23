@@ -59,8 +59,6 @@ fn main() {
 
     // Configure and build the webrender instance.
     // ============================================================================================
-    let (width, height) = window.get_inner_size().unwrap();
-
     let opts = webrender::RendererOptions {
         device_pixel_ratio: window.hidpi_factor(),
         // debug: true,
@@ -126,16 +124,23 @@ fn main() {
         }
     });
 
-    let mut lines = Vec::new();
+    let (width, height) = window.get_inner_size().unwrap();
+    let mut editor = EditorState {
+        height_in_lines: 0,
+        first_line: 0,
+        lines: Vec::new(),
+        view_width_pixels: width as usize,
+        view_height_pixels: height as usize,
+        scroll_offset_pixels: 0,
+    };
 
     // Generate initial frame.
     let builder = build_display_lists(
         pipeline_id,
         font_key,
         &font,
-        width as f32,
-        height as f32,
-        &*lines,
+        &mut editor,
+        None,
     );
     api.set_root_display_list(
         Some(root_background_color),
@@ -146,7 +151,8 @@ fn main() {
     api.generate_frame();
 
     // Main event loop.
-    // ============================================================================================
+    // =============================================================================================
+    let mut dirty = false;
     for event in window.wait_events() {
         match event {
             Event::Closed => return,
@@ -170,22 +176,10 @@ fn main() {
                     }
                 }
             }
-            Event::Resized(width, height) => {
-                let builder = build_display_lists(
-                    pipeline_id,
-                    font_key,
-                    &font,
-                    width as f32,
-                    height as f32,
-                    &*lines,
-                );
-                api.set_root_display_list(
-                    Some(root_background_color),
-                    epoch,
-                    LayoutSize::new(width as f32, height as f32),
-                    builder,
-                );
-                api.generate_frame();
+            Event::Resized(new_width, new_height) => {
+                editor.view_width_pixels = new_width as usize;
+                editor.view_height_pixels = new_height as usize;
+                dirty = true;
             }
             Event::ReceivedCharacter(character) => {
                 // TODO: OS X will send "private usage codepoints" which we want to filter out.
@@ -199,19 +193,17 @@ fn main() {
             _ => {},
         }
 
-        let (width, height) = window.get_inner_size().unwrap();
+        let mut scroll_to_line = None;
 
         // Receive messages from xi-core.
         for message in receiver.try_iter() {
-            // println!("Received: {:?}", message);
-
             // Parse the response string to structured JSON data.
             let update_value = serde_json::from_str::<Value>(&*message).expect("Failed to parse response json");
 
             // Look for "update" messages.
             // TODO: Look for all the other messages xi-core sends.
             if let Some(line_data) = update_value.search("lines") {
-                lines.clear();
+                editor.lines.clear();
                 for line_contents in line_data.as_array().expect("\"lines\" wasn't an array") {
                     let line_contents = line_contents.as_array().expect("Line wasn't an array");
 
@@ -253,26 +245,41 @@ fn main() {
                             _ => panic!("Unknown control type: {:?}", control_type),
                         }
                     }
-                    lines.push(line_stuffffff);
+                    editor.lines.push(line_stuffffff);
                 }
-
-                // TODO: Only generate one frame if multiple update messages were received.
-                let builder = build_display_lists(
-                    pipeline_id,
-                    font_key,
-                    &font,
-                    width as f32,
-                    height as f32,
-                    &*lines,
-                );
-                api.set_root_display_list(
-                    Some(root_background_color),
-                    epoch,
-                    LayoutSize::new(width as f32, height as f32),
-                    builder,
-                );
-                api.generate_frame();
             }
+
+            if let Some(first_line) = update_value.search("first_line") {
+                editor.first_line = first_line.as_u64().expect("\"first_line\" wasn't a number") as usize;
+            }
+
+            // Look for "scrollto" in the message.
+            if let Some(scrollto) = update_value.search("scrollto") {
+                let scrollto = scrollto.as_array().expect("\"scrollto\" was not an array");
+                let line = scrollto[0].as_u64().expect("\"scrollto\" element wasn't an integer");
+                scroll_to_line = Some(line as usize);
+            }
+
+            dirty = true;
+        }
+
+        if dirty {
+            dirty = false;
+
+            let builder = build_display_lists(
+                pipeline_id,
+                font_key,
+                &font,
+                &mut editor,
+                scroll_to_line,
+            );
+            api.set_root_display_list(
+                Some(root_background_color),
+                epoch,
+                LayoutSize::new(width as f32, height as f32),
+                builder,
+            );
+            api.generate_frame();
         }
 
         renderer.update();
@@ -286,17 +293,19 @@ fn build_display_lists(
     pipeline_id: PipelineId,
     font_key: FontKey,
     font: &Font,
-    width: f32,
-    height: f32,
-    lines: &[LineContents],
+    editor: &mut EditorState,
+    scroll_to_line: Option<usize>,
 ) -> DisplayListBuilder {
+    let view_width = editor.view_width_pixels as f32;
+    let view_height = editor.view_height_pixels as f32;
+
     let mut builder = DisplayListBuilder::new(pipeline_id);
 
-    let bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
+    let bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(view_width, view_height));
     let clip_region = {
         let complex = webrender_traits::ComplexClipRegion::new(
             LayoutRect::new(LayoutPoint::new(0.0, 0.0),
-            LayoutSize::new(width, height)),
+            LayoutSize::new(view_width, view_height)),
             webrender_traits::BorderRadius::uniform(0.0),
         );
 
@@ -325,7 +334,7 @@ fn build_display_lists(
         color: ColorF::new(1.0, 0.0, 0.0, 1.0),
         style: BorderStyle::Solid,
     };
-    let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(width, height));
+    let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(view_width, view_height));
 
     // TODO: Investigate why this scaling is necessary. Rusttype says it takes font scale in pixels,
     // but glyphs rendered with the system renderer don't match the sizes produced by rusttype
@@ -338,7 +347,7 @@ fn build_display_lists(
     let line_height = FONT_SIZE_PX * LINE_HEIGHT;
 
     let mut origin = Point { x: 10.0, y: 0.0 };
-    for line in lines {
+    for line in &editor.lines {
         origin = origin + vector(0.0, line_height);
 
         let glyphs = font
@@ -429,6 +438,41 @@ fn build_display_lists(
     builder.pop_stacking_context();
 
     builder
+}
+
+#[derive(Debug)]
+struct EditorState {
+    /// The total number of lines in the document.
+    height_in_lines: usize,
+
+    /// The index of the first line in `lines`.
+    first_line: usize,
+
+    /// A subset of the lines in the document.
+    ///
+    /// This will always have roughly a window's worth of lines, and should always be the lines
+    /// currently visible based on the scroll offset.
+    lines: Vec<LineContents>,
+
+    /// The width of the editor's visible space in the window.
+    ///
+    /// This may be less than the total size of the window (e.g. in the case of multiple panes
+    /// splitting the view), but will never be more.
+    view_width_pixels: usize,
+
+    /// The height of the editor's visible space in the window.
+    ///
+    /// This may be less than the total size of the window (e.g. in the case of multiple panes
+    /// splitting the view), but will never be more.
+    view_height_pixels: usize,
+
+    /// The current scroll state of the editor view.
+    ///
+    /// 0 means that the view is at the top of the document, the value increases as the window
+    /// scrolls down the document.
+    ///
+    /// TODO: does this setup (scrolling top-to-botton) still make sense for non-western layouts?
+    scroll_offset_pixels: usize,
 }
 
 #[derive(Debug)]
