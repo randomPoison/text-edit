@@ -286,6 +286,27 @@ fn main() {
         renderer.render(DeviceUintSize::new(width, height) * hidpi_factor as u32);
 
         window.swap_buffers().ok();
+
+        println!("Scroll layers:");
+        for scroll_layer in api.get_scroll_layer_state() {
+            println!(
+                "  pipeline id: {:?}, scroll root id: {:?}, scroll offset: {:?}",
+                scroll_layer.pipeline_id,
+                scroll_layer.scroll_root_id,
+                scroll_layer.scroll_offset,
+            );
+        }
+
+        api.scroll_layers_with_scroll_root_id(
+            LayoutPoint::new(0.0, 300.0),
+            pipeline_id,
+            ServoScrollRootId(0),
+        );
+        // api.scroll(
+        //     ScrollLocation::Delta(LayoutPoint::new(0.0, 300.0)),
+        //     WorldPoint::new(100.0, 100.0),
+        //     ScrollEventPhase::Move(true),
+        // );
     }
 }
 
@@ -301,29 +322,6 @@ fn build_display_lists(
 
     let mut builder = DisplayListBuilder::new(pipeline_id);
 
-    let bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(view_width, view_height));
-    let clip_region = {
-        let complex = webrender_traits::ComplexClipRegion::new(
-            LayoutRect::new(LayoutPoint::new(0.0, 0.0),
-            LayoutSize::new(view_width, view_height)),
-            webrender_traits::BorderRadius::uniform(0.0),
-        );
-
-        builder.new_clip_region(&bounds, vec![complex], None)
-    };
-
-    builder.push_stacking_context(
-        webrender_traits::ScrollPolicy::Scrollable,
-        bounds,
-        clip_region,
-        0,
-        &LayoutTransform::identity(),
-        &LayoutTransform::identity(),
-        webrender_traits::MixBlendMode::Normal,
-        Vec::new(),
-    );
-
-    // Sample text to demonstrate text layout and rendering.
     let em_border = BorderSide {
         width: 1.0,
         color: ColorF::new(1.0, 0.0, 1.0, 1.0),
@@ -334,6 +332,30 @@ fn build_display_lists(
         color: ColorF::new(1.0, 0.0, 0.0, 1.0),
         style: BorderStyle::Solid,
     };
+
+    let bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(view_width, view_height));
+    let clip_region = {
+        let complex = ComplexClipRegion::new(
+            LayoutRect::new(LayoutPoint::new(0.0, 0.0),
+            LayoutSize::new(view_width, view_height)),
+            BorderRadius::uniform(0.0),
+        );
+
+        builder.new_clip_region(&bounds, vec![complex], None)
+    };
+
+    builder.push_stacking_context(
+        ScrollPolicy::Scrollable,
+        bounds,
+        clip_region,
+        0,
+        &LayoutTransform::identity(),
+        &LayoutTransform::identity(),
+        MixBlendMode::Normal,
+        Vec::new(),
+    );
+
+    // Sample text to demonstrate text layout and rendering.
     let text_bounds = LayoutRect::new(LayoutPoint::new(0.0, 0.0), LayoutSize::new(view_width, view_height));
 
     // TODO: Investigate why this scaling is necessary. Rusttype says it takes font scale in pixels,
@@ -346,7 +368,13 @@ fn build_display_lists(
     let v_metrics = font.v_metrics(font_scale);
     let line_height = FONT_SIZE_PX * LINE_HEIGHT;
 
-    let mut origin = Point { x: 10.0, y: 0.0 };
+    // builder.push_scroll_layer(
+    //     bounds,
+    //     LayoutSize::new(editor.view_width_pixels as f32, editor.height_in_lines as f32 * line_height),
+    //     ServoScrollRootId(1),
+    // );
+
+    let mut origin = Point { x: 10.0, y: editor.first_line as f32 * line_height };
     for line in &editor.lines {
         origin = origin + vector(0.0, line_height);
 
@@ -395,7 +423,7 @@ fn build_display_lists(
                     em_border,
                     em_border,
                     em_border,
-                    webrender_traits::BorderRadius::uniform(0.0),
+                    BorderRadius::uniform(0.0),
                 );
 
                 // Draw border based on webrender glyph dimensions.
@@ -411,7 +439,7 @@ fn build_display_lists(
                         glyph_border,
                         glyph_border,
                         glyph_border,
-                        webrender_traits::BorderRadius::uniform(0.0),
+                        BorderRadius::uniform(0.0),
                     );
                 }
             })
@@ -426,7 +454,7 @@ fn build_display_lists(
 
         builder.push_text(
             text_bounds,
-            webrender_traits::ClipRegion::simple(&bounds),
+            ClipRegion::simple(&bounds),
             glyphs,
             font_key,
             ColorF::new(0.8, 0.8, 0.8, 1.0),
@@ -435,6 +463,7 @@ fn build_display_lists(
         );
     }
 
+    // builder.pop_scroll_layer();
     builder.pop_stacking_context();
 
     builder
@@ -502,7 +531,7 @@ impl Notifier {
     }
 }
 
-impl webrender_traits::RenderNotifier for Notifier {
+impl RenderNotifier for Notifier {
     fn new_frame_ready(&mut self) {
         self.window_proxy.wakeup_event_loop();
     }
