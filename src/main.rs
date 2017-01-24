@@ -366,8 +366,6 @@ fn build_display_lists(
         if editor.scroll_offset_pixels < 0.0 {
             editor.scroll_offset_pixels = 0.0;
         }
-
-        println!("scroll: {:?}", editor.scroll_offset_pixels);
     }
 
     // TODO: There seems to be a 5 pixel gap at the top of the window on Windows. Is this something
@@ -377,6 +375,11 @@ fn build_display_lists(
     for line in &editor.lines {
         origin = origin + vector(0.0, line_height);
 
+        // Keep track of where the line ends so that we can render a cursor at the end of the line
+        // if necessary.
+        let mut line_end = 0.0;
+        let mut last_index = 0;
+
         let glyphs = font
             .layout(&*line.text, font_scale, origin)
             .enumerate()
@@ -384,6 +387,10 @@ fn build_display_lists(
                 let pos = glyph.position();
                 let scaled = glyph.unpositioned();
                 let h_metrics = scaled.h_metrics();
+
+                // Update line end tracking.
+                line_end = pos.x + h_metrics.advance_width;
+                last_index = index + 1;
 
                 // Draw cursors where appropriate.
                 // ================================================================================
@@ -450,6 +457,24 @@ fn build_display_lists(
                 }
             })
             .collect();
+
+        // Render a cursor at the end of the line if necessary.
+        for cursor_col in &line.cursors {
+            if *cursor_col == last_index {
+                let line_middle = origin.y - v_metrics.ascent - v_metrics.descent + (v_metrics.ascent + v_metrics.descent) / 2.0;
+                let line_top = line_middle - line_height / 2.0;
+
+                // Draw a cursor at this col.
+                builder.push_rect(
+                    LayoutRect::new(
+                        LayoutPoint::new(line_end, line_top),
+                        LayoutSize::new(1.0, line_height),
+                    ),
+                    clip_region,
+                    ColorF::new(1.0, 1.0, 1.0, 1.0),
+                );
+            }
+        }
 
         builder.push_text(
             text_bounds,
