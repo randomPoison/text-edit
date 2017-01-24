@@ -101,7 +101,6 @@ fn main() {
     let xi_stdout = xi_process.stdout.expect("No stdout pipe to xi-core child process");
     let xi_stdout = BufReader::new(xi_stdout);
 
-
     // Open a tab.
     // TODO: Actually track the name of the new tab and use it in future messages.
     writeln!(xi_stdin, "{}", r#"{"id":0,"method":"new_tab","params":[]}"#).expect("Failed to send message to xi-core");
@@ -346,7 +345,27 @@ fn build_display_lists(
     let v_metrics = font.v_metrics(font_scale);
     let line_height = FONT_SIZE_PX * LINE_HEIGHT;
 
-    let mut origin = Point { x: 10.0, y: 0.0 };
+    if let Some(scroll_to_line) = scroll_to_line {
+        let line_top = scroll_to_line as f32 * line_height;
+        let line_bottom = scroll_to_line as f32 * line_height + line_height;
+
+        let view_top = editor.scroll_offset_pixels as f32;
+        let view_bottom = (editor.scroll_offset_pixels + editor.view_height_pixels) as f32;
+
+        // TODO: We could use a `clamp()` operation to represent this more clearly, I think?
+        if view_top > line_top {
+            // Scroll view window to match line top.
+            editor.scroll_offset_pixels = line_top as usize;
+        } else if view_bottom < line_bottom {
+            println!("line bottom: {:?}, view bottom: {:?}, view height: {:?}", line_bottom, view_bottom, editor.view_height_pixels);
+            editor.scroll_offset_pixels = line_bottom as usize - editor.view_height_pixels;
+        }
+
+        println!("scroll offset: {}", editor.scroll_offset_pixels);
+    }
+
+    let mut origin = Point { x: 0.0, y: editor.first_line as f32 * line_height - editor.scroll_offset_pixels as f32 };
+
     for line in &editor.lines {
         origin = origin + vector(0.0, line_height);
 
