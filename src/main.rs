@@ -106,7 +106,9 @@ fn main() {
     writeln!(xi_stdin, "{}", r#"{"id":0,"method":"new_tab","params":[]}"#).expect("Failed to send message to xi-core");
 
     // Change the visible region of the file (no response).
-    writeln!(xi_stdin, "{}", r#"{"method":"edit","params":{"method":"scroll","params":[0, 30],"tab":"0"}}"#).expect("Failed to send message to xi-core");
+    let (window_width, window_height) = window.get_inner_size().unwrap();
+    let window_height_in_lines = window_height as f32 / (FONT_SIZE_PX * LINE_HEIGHT);
+    writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"scroll","params":[0, {}],"tab":"0"}}}}"#, window_height_in_lines as usize).expect("Failed to send message to xi-core");
 
     // Open this file and get the lines from the file.
     writeln!(xi_stdin, "{}", r#"{"method":"edit","params":{"method":"open","params":{"filename":"src/main.rs"},"tab":"0"}}"#).expect("Failed to send message to xi-core");
@@ -123,14 +125,13 @@ fn main() {
         }
     });
 
-    let (width, height) = window.get_inner_size().unwrap();
     let mut editor = EditorState {
         height_in_lines: 0,
         first_line: 0,
         lines: Vec::new(),
-        view_width_pixels: width as usize,
-        view_height_pixels: height as usize,
-        scroll_offset_pixels: 0,
+        view_width_pixels: window_width as usize,
+        view_height_pixels: window_height as usize,
+        scroll_offset_pixels: 0.0,
     };
 
     // Generate initial frame.
@@ -144,7 +145,7 @@ fn main() {
     api.set_root_display_list(
         Some(root_background_color),
         epoch,
-        LayoutSize::new(width as f32, height as f32),
+        LayoutSize::new(editor.view_width_pixels as f32, editor.view_height_pixels as f32),
         builder,
     );
     api.generate_frame();
@@ -275,14 +276,14 @@ fn main() {
             api.set_root_display_list(
                 Some(root_background_color),
                 epoch,
-                LayoutSize::new(width as f32, height as f32),
+                LayoutSize::new(editor.view_width_pixels as f32, editor.view_height_pixels as f32),
                 builder,
             );
             api.generate_frame();
         }
 
         renderer.update();
-        renderer.render(DeviceUintSize::new(width, height) * hidpi_factor as u32);
+        renderer.render(DeviceUintSize::new(editor.view_width_pixels as u32, editor.view_height_pixels as u32) * hidpi_factor as u32);
 
         window.swap_buffers().ok();
     }
@@ -350,21 +351,21 @@ fn build_display_lists(
         let line_bottom = scroll_to_line as f32 * line_height + line_height;
 
         let view_top = editor.scroll_offset_pixels as f32;
-        let view_bottom = (editor.scroll_offset_pixels + editor.view_height_pixels) as f32;
+        let view_bottom = editor.scroll_offset_pixels + editor.view_height_pixels as f32;
 
         // TODO: We could use a `clamp()` operation to represent this more clearly, I think?
         if view_top > line_top {
-            // Scroll view window to match line top.
-            editor.scroll_offset_pixels = line_top as usize;
+            // Scroll view upwards to match line top.
+            editor.scroll_offset_pixels = line_top;
         } else if view_bottom < line_bottom {
-            println!("line bottom: {:?}, view bottom: {:?}, view height: {:?}", line_bottom, view_bottom, editor.view_height_pixels);
-            editor.scroll_offset_pixels = line_bottom as usize - editor.view_height_pixels;
+            // Scroll view downwards to match line bottom.
+            editor.scroll_offset_pixels = line_bottom - editor.view_height_pixels as f32;
         }
-
-        println!("scroll offset: {}", editor.scroll_offset_pixels);
     }
 
-    let mut origin = Point { x: 0.0, y: editor.first_line as f32 * line_height - editor.scroll_offset_pixels as f32 };
+    // TODO: There seems to be a 5 pixel gap at the top of the window on Windows. Is this something
+    // we're accidentally introducing, or is it created by webrender somehow?
+    let mut origin = Point { x: 0.0, y: editor.first_line as f32 * line_height - editor.scroll_offset_pixels - 5.0 };
 
     for line in &editor.lines {
         origin = origin + vector(0.0, line_height);
@@ -491,7 +492,7 @@ struct EditorState {
     /// scrolls down the document.
     ///
     /// TODO: does this setup (scrolling top-to-botton) still make sense for non-western layouts?
-    scroll_offset_pixels: usize,
+    scroll_offset_pixels: f32,
 }
 
 #[derive(Debug)]
