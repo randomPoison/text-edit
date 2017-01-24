@@ -350,17 +350,24 @@ fn build_display_lists(
         let line_top = scroll_to_line as f32 * line_height;
         let line_bottom = scroll_to_line as f32 * line_height + line_height;
 
-        let view_top = editor.scroll_offset_pixels as f32;
-        let view_bottom = editor.scroll_offset_pixels + editor.view_height_pixels as f32;
+        let view_top = editor.scroll_offset_pixels as f32 + line_height * 2.0;
+        let view_bottom = editor.scroll_offset_pixels + editor.view_height_pixels as f32 - line_height * 2.0;
 
         // TODO: We could use a `clamp()` operation to represent this more clearly, I think?
         if view_top > line_top {
             // Scroll view upwards to match line top.
-            editor.scroll_offset_pixels = line_top;
+            editor.scroll_offset_pixels = line_top - line_height * 2.0;
         } else if view_bottom < line_bottom {
             // Scroll view downwards to match line bottom.
-            editor.scroll_offset_pixels = line_bottom - editor.view_height_pixels as f32;
+            editor.scroll_offset_pixels = line_bottom - editor.view_height_pixels as f32 + line_height * 2.0;
         }
+
+        // Now clamp the scroll view so it doesn't go negative.
+        if editor.scroll_offset_pixels < 0.0 {
+            editor.scroll_offset_pixels = 0.0;
+        }
+
+        println!("scroll: {:?}", editor.scroll_offset_pixels);
     }
 
     // TODO: There seems to be a 5 pixel gap at the top of the window on Windows. Is this something
