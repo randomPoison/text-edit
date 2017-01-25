@@ -1,6 +1,8 @@
 extern crate app_units;
 extern crate glutin;
 extern crate gleam;
+#[macro_use]
+extern crate lazy_static;
 extern crate rusttype;
 #[macro_use]
 extern crate serde_derive;
@@ -14,6 +16,7 @@ use glutin::*;
 use webrender_traits::*;
 use rusttype::*;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
@@ -33,6 +36,17 @@ const PIXEL_TO_POINT: f32 = 0.75;
 
 /// Enables debug rendering of glyph bounding boxes.
 const DEBUG_GLYPHS: bool = false;
+
+lazy_static! {
+    static ref WHITESPACE_SUBSTITUTES: HashMap<char, char> = {
+        let mut map = HashMap::new();
+        map.insert('\n', '¬');
+        map.insert('\r', '¤');
+        map.insert(' ', '·');
+        map.insert('\t', '»');
+        map
+    };
+}
 
 fn main() {
     // Load sample font into memory for layout purposes.
@@ -379,8 +393,26 @@ fn build_display_lists(
         let mut line_end = 0.0;
         let mut last_index = 0;
 
+        let replaced_chars = line.text
+            .chars()
+            .map(|character| {
+                match WHITESPACE_SUBSTITUTES.get(&character) {
+                    Some(replacement) => *replacement,
+                    None => character,
+                }
+            });
+
         let glyphs = font
-            .layout(&*line.text, font_scale, origin)
+            .glyphs_for(replaced_chars)
+            .scan((None, 0.0), |&mut (ref mut last, ref mut x), g| {
+                let g = g.scaled(font_scale);
+                let kerning = last.map(|last| font.pair_kerning(font_scale, last, g.id())).unwrap_or(0.0);
+                let w = g.h_metrics().advance_width + kerning;
+                let next = g.positioned(origin + vector(*x, 0.0));
+                *last = Some(next.id());
+                *x += w;
+                Some(next)
+            })
             .enumerate()
             .inspect(|&(index, ref glyph)| {
                 let pos = glyph.position();
