@@ -5,6 +5,7 @@ authors = ["David LeGare <excaliburhissheath@gmail.com>"]
 
 [dependencies]
 app_units = "0.3"
+clap = "2.20"
 gleam = "0.2"
 glutin = "0.7"
 rusttype = "0.2.1"

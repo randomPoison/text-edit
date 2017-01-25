@@ -1,4 +1,5 @@
 extern crate app_units;
+extern crate clap;
 extern crate glutin;
 extern crate gleam;
 extern crate rusttype;
@@ -9,6 +10,7 @@ extern crate webrender;
 extern crate webrender_traits;
 
 use app_units::Au;
+use clap::*;
 use gleam::gl;
 use glutin::*;
 use webrender_traits::*;
@@ -35,6 +37,15 @@ const PIXEL_TO_POINT: f32 = 0.75;
 const DEBUG_GLYPHS: bool = false;
 
 fn main() {
+    let matches = App::new("text-edit")
+        .version("0.1")
+        .author("David LeGare <excaliburhissheath@gmail.com>")
+        .about("Edits text poorly")
+        .arg(Arg::with_name("file").required(false))
+        .get_matches();
+
+    let initial_file = matches.value_of("file");
+
     // Load sample font into memory for layout purposes.
     let mut file = File::open("res/Hack-Regular.ttf").unwrap();
     let mut font_bytes = vec![];
@@ -111,7 +122,9 @@ fn main() {
     writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"scroll","params":[0, {}],"tab":"0"}}}}"#, window_height_in_lines as usize).expect("Failed to send message to xi-core");
 
     // Open this file and get the lines from the file.
-    writeln!(xi_stdin, "{}", r#"{"method":"edit","params":{"method":"open","params":{"filename":"src/main.rs"},"tab":"0"}}"#).expect("Failed to send message to xi-core");
+    if let Some(file_path) = initial_file {
+        writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"open","params":{{"filename":"{}"}},"tab":"0"}}}}"#, file_path).expect("Failed to send message to xi-core");
+    }
 
     // Spawn a thread to pull the responses form xi-core.
     let (sender, receiver) = mpsc::channel();
