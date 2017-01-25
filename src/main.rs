@@ -214,7 +214,6 @@ fn main() {
                     let line_string = line_contents[0]
                         .as_str()
                         .expect("First element of line wasn't a string")
-                        .trim_right()
                         .to_string();
                     let mut line_stuffffff = LineContents {
                         text: line_string,
