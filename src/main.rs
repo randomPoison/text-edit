@@ -143,7 +143,13 @@ fn main() {
     let mut editor = EditorState {
         height_in_lines: 0,
         first_line: 0,
-        lines: Vec::new(),
+        lines: vec![
+            LineContents {
+                text: "".into(),
+                cursors: vec![0],
+                selections: Vec::new(),
+            },
+        ],
         view_width_pixels: window_width as usize,
         view_height_pixels: window_height as usize,
         scroll_offset_pixels: 0.0,
