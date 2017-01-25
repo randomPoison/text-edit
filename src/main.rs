@@ -123,6 +123,8 @@ fn main() {
 
     // Open this file and get the lines from the file.
     if let Some(file_path) = initial_file {
+        // TODO: Windows-style path separators cause this to fail.
+        // Issue tracker: https://github.com/excaliburHisSheath/text-edit/issues/5
         writeln!(xi_stdin, r#"{{"method":"edit","params":{{"method":"open","params":{{"filename":"{}"}},"tab":"0"}}}}"#, file_path).expect("Failed to send message to xi-core");
     }
 
